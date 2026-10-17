@@ -22,7 +22,7 @@ public sealed class AuthorizationCodeStoreTests
         AuthorizationServerOptions? serverOptions = null,
         TimeProvider? timeProvider = null)
         => new(
-            backingStore ?? new InMemoryAuthorizationCodeBackingStore(),
+            backingStore ?? InMemoryStores.AuthorizationCodes(),
             dp ?? new EphemeralDataProtectionProvider(),
             new OptionsWrapper<AuthorizationServerOptions>(serverOptions ?? new AuthorizationServerOptions()),
             timeProvider ?? TimeProvider.System);
@@ -198,7 +198,7 @@ public sealed class AuthorizationCodeStoreTests
     {
         // Simulates DP key rotation: store1 writes with dp1, store2 reads with dp2. No tombstone
         // exists, so this must be NotFound — not AlreadyRedeemed.
-        var backingStore = new InMemoryAuthorizationCodeBackingStore();
+        var backingStore = InMemoryStores.AuthorizationCodes();
         var dp1 = new EphemeralDataProtectionProvider();
         var dp2 = new EphemeralDataProtectionProvider();
         var store1 = CreateStore(backingStore: backingStore, dp: dp1);
@@ -210,6 +210,21 @@ public sealed class AuthorizationCodeStoreTests
 
         outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>(
             because: "§7: an entry that cannot be unprotected is unusable — nothing to hand back");
+    }
+
+    [Fact]
+    public async Task TryRedeemAsync_returns_NotFound_for_an_entry_copied_under_another_codes_key()
+    {
+        // A writer to the backing store moves a victim's sealed entry under a code they hold.
+        var backingStore = new InMemoryAuthorizationCodeBackingStore();
+        var store = CreateStore(backingStore: backingStore);
+        await store.StoreAsync("victim-code", BuildEntry(clientId: "client-a"), CancellationToken.None);
+        var victimEntry = await backingStore.GetAsync(StoreKey.Hash("code", "e", "victim-code"), CancellationToken.None);
+        await backingStore.TryInsertAsync(StoreKey.Hash("code", "e", "attacker-code"), victimEntry!.Value, FarFuture, CancellationToken.None);
+
+        var outcome = await store.TryRedeemAsync("attacker-code", "client-a", "family-1", CancellationToken.None);
+
+        outcome.Should().BeOfType<AuthorizationCodeRedemptionResult.NotFound>();
     }
 
     [Theory]
@@ -224,7 +239,9 @@ public sealed class AuthorizationCodeStoreTests
         var json = System.Text.Json.JsonSerializer.Serialize(BuildEntry(), StoreJsonSerializerContext.Default.AuthorizationCodeEntry)
             .Replace("""{"challenge":"challenge-abc","method":"S256"}""", pkce, StringComparison.Ordinal);
         json.Should().Contain(pkce, "the substitution must have hit the binding");
-        var planted = dp.CreateProtector("ZeeKayDa.Auth:AuthorizationCodeStore").Protect(System.Text.Encoding.UTF8.GetBytes(json));
+        var planted = dp.CreateProtector("ZeeKayDa.Auth:AuthorizationCodeStore")
+            .CreateProtector(StoreKey.Hash("code", "e", "any-code").ToString())
+            .Protect(System.Text.Encoding.UTF8.GetBytes(json));
         var store = CreateStore(backingStore: new PlantedEntryBackingStore(planted), dp: dp);
 
         var outcome = await store.TryRedeemAsync("any-code", "client-a", "family-1", CancellationToken.None);
@@ -244,7 +261,7 @@ public sealed class AuthorizationCodeStoreTests
     public async Task TryRedeemAsync_returns_AlreadyRedeemed_from_a_tombstone_that_holds_only_the_family_id()
     {
         // The replaying store has a different Data Protection key: the tombstone must need none.
-        var backingStore = new TombstoneCapturingBackingStore(new InMemoryAuthorizationCodeBackingStore());
+        var backingStore = new TombstoneCapturingBackingStore(InMemoryStores.AuthorizationCodes());
         var store1 = CreateStore(backingStore: backingStore, dp: new EphemeralDataProtectionProvider());
         var store2 = CreateStore(backingStore: backingStore, dp: new EphemeralDataProtectionProvider());
         const string code = "tombstone-family-only-code";
@@ -301,7 +318,7 @@ public sealed class AuthorizationCodeStoreTests
         // "winner" would have written, then reports the insert as lost, exercising the §9
         // "if it returns false, someone else won the race, resolve via the tombstone" path
         // deterministically rather than relying on real thread contention.
-        var inner = new InMemoryAuthorizationCodeBackingStore();
+        var inner = InMemoryStores.AuthorizationCodes();
         var dp = new EphemeralDataProtectionProvider();
         var seedStore = CreateStore(backingStore: inner, dp: dp);
         const string code = "race-losing-code";
@@ -650,7 +667,7 @@ public sealed class AuthorizationCodeStoreTests
 
     private sealed class ThrowingOnRemoveBackingStore : IAuthorizationCodeBackingStore
     {
-        private readonly IAuthorizationCodeBackingStore _inner = new InMemoryAuthorizationCodeBackingStore();
+        private readonly IAuthorizationCodeBackingStore _inner = InMemoryStores.AuthorizationCodes();
 
         public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);
@@ -664,7 +681,7 @@ public sealed class AuthorizationCodeStoreTests
 
     private sealed class CancellationThrowingOnRemoveBackingStore : IAuthorizationCodeBackingStore
     {
-        private readonly IAuthorizationCodeBackingStore _inner = new InMemoryAuthorizationCodeBackingStore();
+        private readonly IAuthorizationCodeBackingStore _inner = InMemoryStores.AuthorizationCodes();
 
         public Task<bool> TryInsertAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
             => _inner.TryInsertAsync(key, value, expiresAt, cancellationToken);

@@ -48,7 +48,7 @@ internal sealed class ValidatedClientResolver(
         if (client is null)
             return null;
 
-        var (snapshot, failure) = Resolve(client);
+        var (snapshot, failure) = Resolve(client, clientId);
         if (failure is null)
             return snapshot as TClient;
 
@@ -82,7 +82,7 @@ internal sealed class ValidatedClientResolver(
     }
 
     /// <summary>The copy the protocol will see and what is wrong with it; no copy when it could not be read.</summary>
-    private (ClientRegistrationSnapshot? Snapshot, Failure? Failure) Resolve(IClientWithCredentials client)
+    private (ClientRegistrationSnapshot? Snapshot, Failure? Failure) Resolve(IClientWithCredentials client, string lookedUpClientId)
     {
         ClientRegistrationSnapshot snapshot;
         try
@@ -97,12 +97,12 @@ internal sealed class ValidatedClientResolver(
                 new FailureIdentity("unreadable", [ex.GetType().FullName ?? ex.GetType().Name])));
         }
 
-        return (snapshot, Validate(snapshot));
+        return (snapshot, Validate(snapshot, lookedUpClientId));
     }
 
-    private Failure? Validate(IClientWithCredentials client)
+    private Failure? Validate(IClientWithCredentials client, string lookedUpClientId)
     {
-        var failures = validate(client);
+        IReadOnlyList<ZeeKayDaConfigurationFailure> failures = [.. validate(client), .. ClientIdMismatch(client, lookedUpClientId)];
         if (failures.Count == 0)
             return null;
 
@@ -110,6 +110,22 @@ internal sealed class ValidatedClientResolver(
         return new Failure(
             string.Join("; ", failures.Select(f => f.Message)),
             new FailureIdentity("rules", [.. failures.Select(f => f.Code).Order(StringComparer.Ordinal)]));
+    }
+
+    /// <summary>
+    /// A registration served under an id other than the one presented would carry its own spelling into every
+    /// later binding, so a repository matching loosely serves it as unknown.
+    /// </summary>
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ClientIdMismatch(IClient client, string lookedUpClientId)
+    {
+        if (string.Equals(client.ClientId, lookedUpClientId, StringComparison.Ordinal))
+            yield break;
+
+        yield return new ZeeKayDaConfigurationFailure(
+            "client.client_id.mismatch",
+            "IClientRepository.FindByClientIdAsync returned this registration for a client_id that differs from its " +
+            "ClientId. A repository must match client_id exactly, comparing ordinally: no case folding and no " +
+            "trimming.");
     }
 
     /// <param name="Violations">What the operator is told.</param>

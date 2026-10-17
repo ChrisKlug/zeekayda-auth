@@ -15,18 +15,20 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
 {
     /// <summary>Ends the SSO session and this browser's interactions, then answers at the client or a signed-out page.</summary>
     /// <param name="context">The request signing out.</param>
+    /// <param name="session">The session this request carries, or <see langword="null"/> when it carries none that reads.</param>
     /// <param name="redirect">Where to send the user back to the client, or <see langword="null"/>.</param>
-    public async Task<IResult> SignOutAsync(HttpContext context, PostLogoutRedirect? redirect)
+    public async Task<IResult> SignOutAsync(HttpContext context, SsoSessionState? session, PostLogoutRedirect? redirect)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         // A cross-site post carries no Lax session cookie, and must not end the session unasked (§2).
+        // Through the handler, so the deletion carries the attributes the browser needs to drop it.
         if (context.Request.Cookies.ContainsKey(ZeeKayDaCookies.Session))
-        {
-            // Through the handler, so the deletion carries the attributes the browser needs to drop it.
             await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
+
+        // An unreadable cookie is no session, so the interactions it would end are not its own.
+        if (session is not null)
             InteractionBindingCookie.DeleteAll(context);
-        }
 
         if (redirect is not null)
         {

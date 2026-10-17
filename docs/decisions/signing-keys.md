@@ -78,8 +78,8 @@ framework never binds it, so `appsettings.json` alone cannot widen it; `Producti
 running in an allowed non-`Development` environment logs `Critical` on every start, and an unknown one fails closed.
 Persisted keys are plain PEM, owner-only from creation (`0700`/`0600` POSIX, a non-inherited ACL on Windows)
 via .NET's file APIs, created by one host at a time under a lock file and renamed into place (racers load the
-winner's), and loading fails closed on a broader mode or a symlinked key file. Ancestor directories are not
-walked: that matters only on a shared machine, and the environment gate keeps a development key out of production.
+winner's), and loading fails closed on a broader mode or a symlinked key file. A key directory the framework creates gets a `.gitignore` of `*`, since the default sits in the source tree; one the host made is left alone.
+Ancestor directories are not walked: that matters only on a shared machine, and the environment gate keeps a development key out of production.
 
 **Extension contracts are public in core; ZeeKayDa's own crypto and redaction stay internal.**
 `InternalsVisibleTo` can only name first-party assemblies at build time, so it structurally cannot serve a

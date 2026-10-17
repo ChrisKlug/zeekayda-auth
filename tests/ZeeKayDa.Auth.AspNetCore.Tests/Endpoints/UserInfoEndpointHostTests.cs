@@ -147,12 +147,7 @@ public sealed class UserInfoEndpointHostTests(
     [Fact]
     public async Task A_host_serving_no_code_grant_publishes_no_userinfo_endpoint_and_serves_none()
     {
-        using var factory = new TestWebAppFactory(opts =>
-        {
-            // client_credentials needs a non-"none" method advertised; "none" stays for the
-            // default public test client the factory registers.
-            opts.GrantTypesSupported = [GrantType.ClientCredentials];
-        });
+        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = []);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri(Issuer) });
 
         var document = await client.GetFromJsonAsync<JsonElement>("/.well-known/openid-configuration", Cancellation);

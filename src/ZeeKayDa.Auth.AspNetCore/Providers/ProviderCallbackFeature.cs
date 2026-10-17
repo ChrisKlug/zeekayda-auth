@@ -27,10 +27,19 @@ internal sealed class ProviderCallbackFeature
         FailedInteractionId ??= RefusedInteractionId ?? interactionId;
     }
 
+    /// <summary>Records that the handler signed into the framework's external scheme.</summary>
+    public void MarkSignedIn() => SignedIn = true;
+
     /// <summary>Whether the handler raised its failure event — whoever then answered the callback.</summary>
     public bool Failed { get; private set; }
 
     public ProviderRegistration Provider { get; }
+
+    /// <summary>Whether the handler signed into the framework's external scheme.</summary>
+    public bool SignedIn { get; private set; }
+
+    /// <summary>Whether the handler reported handling its callback without either signing in or failing.</summary>
+    public bool Abandoned => !SignedIn && !Failed && !Refused;
 
     /// <summary>Whether the provider reported a refusal by the user.</summary>
     public bool Refused { get; private set; }

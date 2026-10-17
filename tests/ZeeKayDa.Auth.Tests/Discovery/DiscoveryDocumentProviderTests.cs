@@ -111,14 +111,14 @@ public sealed class DiscoveryDocumentProviderTests
     [Fact]
     public async Task GetDocument_omits_AuthorizationEndpoint_when_no_supported_grant_uses_it()
     {
-        // A client_credentials-only host does not serve the endpoint, so the metadata does not
+        // A host without the code grant does not serve the endpoint, so the metadata does not
         // name it (RFC 8414 §2) — not even when the host configured an explicit URI for it — and
         // nothing that describes the endpoint is advertised either: response types, response modes
         // and PKCE methods are all omitted, since OIDC Discovery §4.2 omits a zero-element claim.
         var doc = await GetDocumentAsync(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
+            GrantTypesSupported = [],
             AuthorizationEndpoint =
             {
                 Uri = "https://auth.example.com/custom/authorize",
@@ -131,8 +131,8 @@ public sealed class DiscoveryDocumentProviderTests
         doc.ResponseModesSupported.Should().BeNull();
         doc.CodeChallengeMethodsSupported.Should().BeNull();
         doc.ClaimsSupported.Should().BeNull();
-        doc.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
-        doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token", "the token endpoint is what such a host serves");
+        doc.GrantTypesSupported.Should().BeEmpty();
+        doc.TokenEndpoint.Should().Be("https://auth.example.com/connect/token");
     }
 
     [Fact]
@@ -214,14 +214,14 @@ public sealed class DiscoveryDocumentProviderTests
                 TypesSupported = [ResponseType.Code],
                 ModesSupported = [ResponseMode.Query],
             },
-            GrantTypesSupported = [GrantType.AuthorizationCode, GrantType.RefreshToken],
+            GrantTypesSupported = [GrantType.AuthorizationCode],
             TokenEndpoint = { AdvertisedAuthMethods = [TokenEndpointAuthMethods.ClientSecretBasic, "tls_client_auth"] },
         }, scopeRepository, TestSigningKeys.Ring(SigningAlgorithm.PS256, keyCount: 2));
 
         doc.ResponseTypesSupported.Should().Equal(ResponseType.Code);
         doc.ScopesSupported.Should().Equal(StandardScopes.OpenId.Name, StandardScopes.Profile.Name);
         doc.ResponseModesSupported.Should().Equal(ResponseMode.Query);
-        doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode, GrantType.RefreshToken);
+        doc.GrantTypesSupported.Should().Equal(GrantType.AuthorizationCode);
         doc.TokenEndpointAuthMethodsSupported.Should().Equal(
             [TokenEndpointAuthMethods.ClientSecretBasic],
             "the filter narrows what the server performs, and no authenticator performs tls_client_auth");
@@ -330,12 +330,12 @@ public sealed class DiscoveryDocumentProviderTests
             new AuthorizationServerOptions
             {
                 Issuer = "https://auth.example.com",
-                GrantTypesSupported = [GrantType.ClientCredentials],
+                GrantTypesSupported = [],
             },
             repository);
 
         // Only the authorization code grant issues an ID token or answers the UserInfo endpoint,
-        // so a client_credentials-only host can supply none of these claims. Discovery §3 asks for
+        // so a host without that grant can supply none of these claims. Discovery §3 asks for
         // claims the server MAY supply, and advertising one nothing can produce is worse than the
         // RECOMMENDED field being absent — the same rule that omits the endpoints themselves.
         doc.ClaimsSupported.Should().BeNull();

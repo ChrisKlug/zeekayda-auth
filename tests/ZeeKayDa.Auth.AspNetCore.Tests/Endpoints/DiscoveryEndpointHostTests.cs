@@ -196,7 +196,7 @@ public sealed class DiscoveryEndpointHostTests(
     {
         using var factory = new TestWebAppFactory(opts =>
         {
-            opts.GrantTypesSupported = [GrantType.ClientCredentials];
+            opts.GrantTypesSupported = [];
             opts.AuthorizationEndpoint.CodeChallengeMethodsSupported = null;
         });
         using var client = CreateClient(factory);

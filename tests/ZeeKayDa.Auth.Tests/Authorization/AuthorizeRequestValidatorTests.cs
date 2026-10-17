@@ -526,6 +526,20 @@ public class AuthorizeRequestValidatorTests
             .Subject.Error.Should().Be("invalid_request");
     }
 
+    [Theory]
+    [InlineData("none foo")]
+    [InlineData("foo none")]
+    public async Task Phase2_prompt_none_combined_with_an_unrecognised_value_is_invalid_request(string prompt)
+    {
+        var parameters = ValidParameters();
+        parameters["prompt"] = [prompt];
+
+        var result = await Validate(parameters);
+
+        result.Should().BeOfType<AuthorizeRequestValidationResult.RedirectError>()
+            .Subject.Error.Should().Be("invalid_request");
+    }
+
     [Fact]
     public async Task Phase2_unrecognised_prompt_values_are_ignored()
     {
@@ -558,6 +572,9 @@ public class AuthorizeRequestValidatorTests
     [InlineData("-1")]
     [InlineData("abc")]
     [InlineData("1.5")]
+    [InlineData(" 60")]
+    [InlineData("60 ")]
+    [InlineData("+60")]
     public async Task Phase2_malformed_max_age_is_invalid_request(string maxAge)
     {
         var parameters = ValidParameters();

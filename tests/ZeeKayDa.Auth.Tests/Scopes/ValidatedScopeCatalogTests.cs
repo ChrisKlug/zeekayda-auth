@@ -122,6 +122,30 @@ public sealed class ValidatedScopeCatalogTests
         (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.name.blank"]);
     }
 
+    [Theory]
+    [InlineData("read write")]
+    [InlineData("read\"write")]
+    [InlineData("read\\write")]
+    [InlineData("read\twrite")]
+    [InlineData("read\u007Fwrite")]
+    [InlineData("café")]
+    public async Task GetScopesAsync_fails_with_scopes_name_invalid_when_a_name_has_a_character_outside_the_scope_token_syntax(string name)
+    {
+        var catalog = Catalog(StandardScopes.OpenId, new ScopeDefinition { Name = name });
+
+        (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.name.invalid"]);
+    }
+
+    [Fact]
+    public async Task GetScopesAsync_accepts_a_name_using_the_boundary_characters_of_the_scope_token_syntax()
+    {
+        var catalog = Catalog(StandardScopes.OpenId, new ScopeDefinition { Name = "!#[]~" });
+
+        var act = async () => await catalog.GetScopesAsync(TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+    }
+
     [Fact]
     public async Task GetScopesAsync_fails_with_scopes_name_duplicate_when_two_scopes_share_a_name()
     {
@@ -265,6 +289,14 @@ public sealed class ValidatedScopeCatalogTests
         var catalog = Catalog();
 
         (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.openid_missing"]);
+    }
+
+    [Fact]
+    public async Task GetScopesAsync_fails_with_scopes_openid_hidden_when_the_openid_scope_is_not_discoverable()
+    {
+        var catalog = Catalog(StandardScopes.OpenId with { IsDiscoverable = false });
+
+        (await CodesFrom(catalog)).Should().BeEquivalentTo(["scopes.openid_hidden"]);
     }
 
     // ── A repository's own exception is never absorbed ────────────────────────────────────────
