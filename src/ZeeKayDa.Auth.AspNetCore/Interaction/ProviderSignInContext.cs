@@ -5,9 +5,9 @@ using ZeeKayDa.Auth.Configuration;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// What <see cref="ProviderOptions.OnProviderSignIn"/> receives: the principal an external
-/// provider authenticated, the provider, the client asking, and the two ways the handler may end
-/// the request instead of letting the framework promote the principal.
+/// What <see cref="ProviderOptions.OnProviderSignIn"/> receives: who the user is at the external
+/// provider, the principal it authenticated, the provider, the client asking, and the two ways the
+/// handler may end the request instead of letting the framework promote the principal.
 /// </summary>
 /// <remarks>
 /// The raw provider ticket is not exposed, and tokens a provider saved into it with
@@ -21,6 +21,7 @@ public sealed class ProviderSignInContext
     private int _completed;
 
     internal ProviderSignInContext(
+        ExternalIdentity identity,
         ClaimsPrincipal principal,
         ProviderDescriptor provider,
         ClientInformation client,
@@ -29,6 +30,7 @@ public sealed class ProviderSignInContext
         Func<PathString, Task> redirect,
         Func<Task> deny)
     {
+        ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(client);
@@ -36,6 +38,7 @@ public sealed class ProviderSignInContext
         ArgumentNullException.ThrowIfNull(redirect);
         ArgumentNullException.ThrowIfNull(deny);
 
+        Identity = identity;
         Principal = principal;
         Provider = provider;
         Client = client;
@@ -112,6 +115,13 @@ public sealed class ProviderSignInContext
                 "terminal: call at most one of them, once.");
         }
     }
+
+    /// <summary>
+    /// Who the user is at the provider: the key to find a linked local account by. Read from
+    /// <see cref="Principal"/>'s subject claim before this handler runs; a principal without a
+    /// usable one is refused, and the handler is never called for it.
+    /// </summary>
+    public ExternalIdentity Identity { get; }
 
     /// <summary>
     /// A copy of the principal as the provider returned it, reserved claims removed; changes to it

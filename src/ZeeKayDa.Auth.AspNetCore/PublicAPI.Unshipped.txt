@@ -66,7 +66,11 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.GetPendingPrincip
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInAsync(params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, string! authenticationMethod, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, params System.Security.Claims.Claim![]! additionalClaims) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity
+ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity.Issuer.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity.Subject.get -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal
+ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Identity.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity!
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Principal.get -> System.Security.Claims.ClaimsPrincipal!
 ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor
@@ -80,6 +84,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.DenyAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.EffectiveScopes.get -> System.Collections.Generic.IReadOnlyList<string!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Identity.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Principal.get -> System.Security.Claims.ClaimsPrincipal!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RedirectToAsync(Microsoft.AspNetCore.Http.PathString path) -> System.Threading.Tasks.Task!

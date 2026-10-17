@@ -97,6 +97,17 @@ internal static class ProviderTestHost
         };
     }
 
+    /// <summary>The acme provider returning exactly <paramref name="claims"/>, as a handler's own claim mapping would.</summary>
+    public static Action<OAuthOptions> ConfigureAcmeReturning(params Claim[] claims) => options =>
+    {
+        ConfigureAcme(options);
+        options.Events.OnCreatingTicket = context =>
+        {
+            context.Identity!.AddClaims(claims);
+            return Task.CompletedTask;
+        };
+    };
+
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
     {
         BaseAddress = new Uri("https://test.example.com"),
@@ -149,6 +160,8 @@ internal static class ProviderTestHost
                 : Results.Ok(new
                 {
                     sub = pending.Principal.FindFirstValue("sub"),
+                    identityIssuer = pending.Identity.Issuer,
+                    identitySubject = pending.Identity.Subject,
                     provider = pending.Provider.Id,
                     reservedClaims = pending.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase)),
                     identities = pending.Principal.Identities.Select(identity => identity.AuthenticationType).ToArray(),
@@ -176,7 +189,7 @@ internal static class ProviderTestHost
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedAccountAsync("mapped-" + pending.Principal.FindFirstValue("sub"), AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync("mapped-" + pending.Identity.Subject, AuthenticationMethods.Password);
         });
 
         // The mistake the service exists to refuse: passing the upstream subject straight back.
@@ -185,7 +198,7 @@ internal static class ProviderTestHost
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedAccountAsync(pending.Principal.FindFirstValue("sub")!, AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync(pending.Identity.Subject, AuthenticationMethods.Password);
         });
 
         // Linking straight from the form, without reading first: the service's own refusals. The
