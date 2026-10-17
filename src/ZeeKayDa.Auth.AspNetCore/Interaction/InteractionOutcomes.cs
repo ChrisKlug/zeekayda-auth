@@ -25,6 +25,7 @@ internal sealed class InteractionOutcomes(
     ProviderHandlerActivator activator,
     ProviderRegistry providers,
     AuthorizationCodeIssuer issuer,
+    ProviderChallengeHook challengeHook,
     IOptions<AuthorizationServerOptions> options,
     SanitizingLogger<InteractionOutcomes> logger)
 {
@@ -247,7 +248,9 @@ internal sealed class InteractionOutcomes(
 
     /// <summary>
     /// Terminal. Challenges one provider, returning to <c>/connect/resume</c>, with the interaction
-    /// and provider stamped into properties the returned ticket carries whatever the handler does.
+    /// and provider stamped into properties the returned ticket carries whatever the handler does —
+    /// or, when <see cref="ProviderOptions.OnProviderChallenge"/> does not let it proceed, answers
+    /// the client with the error instead.
     /// </summary>
     public async Task ChallengeAsync(HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration)
     {
@@ -257,16 +260,22 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
+        var properties = new AuthenticationProperties();
+        StampRoundTrip(properties, requestContext, registration);
+
+        if (await challengeHook.RefusalAsync(context, requestContext, registration, properties).ConfigureAwait(false) is { } refusal)
+        {
+            var error = await ClientErrorAsync(context, requestContext, refusal.Error, refusal.Description).ConfigureAwait(false);
+            await WriteAsync(context, error).ConfigureAwait(false);
+            return;
+        }
+
+        // The hook may have written over them.
+        StampRoundTrip(properties, requestContext, registration);
+
         if (requestContext.ProviderAttempt is not null)
             await flow.UpdateAsync(context, requestContext with { ProviderAttempt = null }).ConfigureAwait(false);
 
-        var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
-        var properties = new AuthenticationProperties
-        {
-            RedirectUri = InteractionHandoff.BuildRedirectUrl(resume, requestContext.Id),
-        };
-        properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
-        properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
         // Only a challenge from the login page has a page to come back to.
         if (ReturnsToLoginPage)
             ProviderChallengeCookie.Issue(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext);
@@ -274,6 +283,23 @@ internal sealed class InteractionOutcomes(
         var handler = await activator.ActivateAsync(context, registration).ConfigureAwait(false);
         await handler.ChallengeAsync(properties).ConfigureAwait(false);
         await CommitAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// What brings the user back to this interaction through <c>/connect/resume</c>, with the
+    /// ticket lifetime left to the external cookie: these properties become its ticket's.
+    /// </summary>
+    private void StampRoundTrip(AuthenticationProperties properties, AuthorizationRequestContext requestContext, ProviderRegistration registration)
+    {
+        var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
+        properties.RedirectUri = InteractionHandoff.BuildRedirectUrl(resume, requestContext.Id);
+        properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
+        properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
+
+        properties.IssuedUtc = null;
+        properties.ExpiresUtc = null;
+        properties.IsPersistent = false;
+        properties.AllowRefresh = null;
     }
 
     /// <summary>

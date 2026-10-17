@@ -133,3 +133,16 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Failed = 1 -> ZeeKayD
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.LoginHint.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject
 static ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject.Derive(string! issuer, string! subject) -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.LoginHint.get -> string?
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.MaxAge.get -> System.TimeSpan?
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Prompts.get -> System.Collections.Generic.IReadOnlySet<ZeeKayDa.Auth.Authorization.PromptValue>!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Properties.get -> Microsoft.AspNetCore.Authentication.AuthenticationProperties!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.ReauthenticationRequired.get -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderChallenge.get -> System.Func<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext!, ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!>?
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderChallenge.set -> void
+static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Proceed -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!
+static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Reauthenticating -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!
+static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Refuse -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!
