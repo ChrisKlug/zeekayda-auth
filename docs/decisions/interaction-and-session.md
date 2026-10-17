@@ -115,7 +115,10 @@ error and not a shadowing rule. The framework pins every provider's forwarding a
 callback path, sign-in scheme and access-denied path by name, and *asserts* the pins with a validator resolved
 at startup, because a post-configurer registered later would otherwise win silently and send the sign-in to the
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
-route is refused for the same reason: the middleware would claim the callback first.
+route is refused for the same reason: the middleware would claim the callback first. A provider whose
+handler is not an `IAuthenticationRequestHandler` fails startup: nothing could complete its callback.
+One outside `RemoteAuthenticationHandler<>` starts with a warning: the pins cannot reach it, so its callback
+path and sign-in scheme are the host's to keep.
 
 **No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
 properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
