@@ -80,6 +80,11 @@ public sealed class ProviderSignInInteraction
     /// read is not reported as absent, since the page would then tell the user there is nothing
     /// to finish.
     /// </exception>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// The parked principal carries no usable upstream subject. A principal parked through
+    /// <see cref="ProviderSignInContext.RedirectToAsync"/> always has one: the framework refuses
+    /// one without before the hook runs.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// There is no active HTTP request — the service was resolved outside one.
     /// </exception>
@@ -123,9 +128,7 @@ public sealed class ProviderSignInInteraction
     /// are at the provider.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The parked principal cannot be promoted: its provider is no longer registered, it carries no
-    /// subject on an authenticated identity, or its subject claim names no issuer — a provider
-    /// handler that must be fixed, since it fails every time.
+    /// The parked principal's provider is no longer registered.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
