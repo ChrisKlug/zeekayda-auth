@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Signing in replaces the accounts held unless the page asks to add** (#1032).
   `LoginInteraction.SignInAsync` keeps today's behaviour, signing every other account out — the safe
   default on a shared computer. The new `AddAccountAsync` keeps them, up to
-  `AuthorizationEndpoint.Interaction.MaxSignedInAccounts` (default 5), past which the least recently
+  `AuthorizationEndpoint.Interaction.MaxSignedInAccounts` (default 5, at most 20), past which the least recently
   used account is signed out. Both take an optional `loginIdentifier`, held to the `login_hint` rule,
   which the account picker shows and a `login_hint` is matched against; without one the subject
   stands in. External sign-ins decide in `OnProviderSignIn` through `ProviderSignInContext.AddAccount`

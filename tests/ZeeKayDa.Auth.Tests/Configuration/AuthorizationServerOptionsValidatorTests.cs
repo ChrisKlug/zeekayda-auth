@@ -1727,6 +1727,31 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Fact]
+    public void Validate_rejects_a_MaxSignedInAccounts_above_twenty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = 21 } },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.max_signed_in_accounts.too_large")
+            .Which.Message.Should().Contain("MaxSignedInAccounts");
+    }
+
+    [Fact]
+    public void Validate_accepts_a_MaxSignedInAccounts_of_twenty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = 20 } },
+        });
+
+        failures.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Validate_accepts_a_MaxSignedInAccounts_of_one()
     {
         var failures = Validate(new AuthorizationServerOptions

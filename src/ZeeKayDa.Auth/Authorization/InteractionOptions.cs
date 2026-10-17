@@ -70,13 +70,14 @@ public sealed class InteractionOptions
     public string? SelectAccountPath { get; set; }
 
     /// <summary>
-    /// Gets or sets how many accounts one browser can be signed in to at once. Defaults to 5.
+    /// Gets or sets how many accounts one browser can be signed in to at once, from 1 to 20. Defaults to 5.
     /// </summary>
     /// <remarks>
     /// Accounts beyond the first come only from <c>LoginInteraction.AddAccountAsync</c>, or from
     /// <c>ProviderSignInContext.AddAccount</c>; every other sign-in replaces the accounts held. Adding
     /// one past this number signs out the account least recently signed in to or chosen. Every account
-    /// is a few hundred bytes of the session cookie, so a large number makes a large cookie.
+    /// is a few hundred bytes of the session cookie, which is why a value above 20 fails at startup: a
+    /// larger cookie can be refused as a request header, and the user would get an error on every request.
     /// </remarks>
     public int MaxSignedInAccounts { get; set; } = 5;
 }

@@ -47,7 +47,8 @@ stay signed in unseen — and `AddAccountAsync` keeps them; the page decides whe
 always adding, and the framework never infers it. External sign-ins decide in `OnProviderSignIn`
 through `ProviderSignInContext.AddAccount` and `.LoginIdentifier`, carried with a parked principal to
 the linking page, whose `SignInWithReplacedAccountAsync` identifier wins; with no hook an external
-sign-in replaces. A browser holds at most `MaxSignedInAccounts` (default 5); adding past it signs
+sign-in replaces. A browser holds at most `MaxSignedInAccounts` (default 5, refused above 20, where the cookie nears
+header limits); adding past it signs
 out the account least recently signed in to or chosen — the direction that only ever removes access.
 A login identifier is held to the `login_hint` rule it is matched against.
 
