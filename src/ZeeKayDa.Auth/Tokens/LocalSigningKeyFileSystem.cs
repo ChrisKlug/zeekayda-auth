@@ -22,10 +22,17 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public void EnsureDirectorySafe(string directory)
     {
+        var createsDirectory = !Directory.Exists(directory);
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             EnsureDirectorySafeWindows(directory);
         else
             EnsureDirectorySafeUnix(directory);
+
+        // The default directory sits under the content root, inside the host's source tree. A
+        // directory the host made is the host's to manage, so only one created here is marked.
+        if (createsDirectory)
+            IgnoreContentsInGit(directory);
     }
 
     /// <summary>How long a host waits for the lock before failing; a lock held this long is not a host taking its turn.</summary>
@@ -161,6 +168,20 @@ internal sealed class LocalSigningKeyFileSystem : IDevelopmentSigningKeyFileSyst
     /// <inheritdoc/>
     public bool FileExists(string path) =>
         File.Exists(path) && new FileInfo(path).ResolveLinkTarget(returnFinalTarget: true) is null or { Exists: true };
+
+    private static void IgnoreContentsInGit(string directory)
+    {
+        var ignoreFile = Path.Join(directory, ".gitignore");
+        try
+        {
+            using var stream = new FileStream(ignoreFile, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            stream.Write("*\n"u8);
+        }
+        catch (IOException) when (File.Exists(ignoreFile))
+        {
+            // Another host created the directory at the same moment and wrote it first.
+        }
+    }
 
     [ExcludeFromCodeCoverage(Justification = "Windows-only, so unreachable on the Linux runner whose coverage artifact feeds the regression gate. LocalSigningKeyFileSystemTests covers this on the windows-latest runner.")]
     [SupportedOSPlatform("windows")]

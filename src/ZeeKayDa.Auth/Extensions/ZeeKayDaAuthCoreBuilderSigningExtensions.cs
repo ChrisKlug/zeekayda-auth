@@ -54,6 +54,7 @@ public static class ZeeKayDaAuthCoreBuilderSigningExtensions
     /// Startup warns, and fails with <see cref="ZeeKayDaConfigurationException"/> outside
     /// <see cref="DevelopmentSigningOptions.AllowedEnvironments"/> (default <c>["Development"]</c>).
     /// The key file is owner-only; one with broader permissions is treated as compromised and fails startup.
+    /// A directory this creates gets a <c>.gitignore</c> ignoring its contents; an existing one is left as it is.
     /// </remarks>
     /// <typeparam name="TBuilder">The builder type, returned so a chain keeps it.</typeparam>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
