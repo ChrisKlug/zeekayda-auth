@@ -115,7 +115,10 @@ error and not a shadowing rule. The framework pins every provider's forwarding a
 callback path, sign-in scheme and access-denied path by name, and *asserts* the pins with a validator resolved
 at startup, because a post-configurer registered later would otherwise win silently and send the sign-in to the
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
-route is refused for the same reason: the middleware would claim the callback first.
+route is refused for the same reason: the middleware would claim the callback first. A provider whose
+handler is not an `IAuthenticationRequestHandler` fails startup: nothing could complete its callback.
+One outside `RemoteAuthenticationHandler<>` starts with a warning: the pins cannot reach it, so its callback
+path and sign-in scheme are the host's to keep.
 
 **No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
 properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
@@ -132,7 +135,7 @@ subject together, never the upstream value: two providers can never share a sess
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
 address. Local off with one provider → challenge it directly; otherwise `LoginPath` → redirect there; a `LoginPath`
 nulled when the page is needed → `server_error`, warned at startup; local off, no providers → startup error. Checks
-fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a `client_credentials`-only host starts
+fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a host without the code grant starts
 clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
 
 **Home realm discovery never consults the host's user store.** Framework HRD (deferred, unbuilt) is domain

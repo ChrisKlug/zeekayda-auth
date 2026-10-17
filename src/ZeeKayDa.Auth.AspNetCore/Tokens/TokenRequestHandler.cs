@@ -46,9 +46,6 @@ internal sealed class TokenRequestHandler(
         if (authentication.Client is not { } client)
             return TokenResponses.InvalidClient(context);
 
-        if (!client.AllowedGrantTypes.Contains(GrantType.AuthorizationCode))
-            return TokenResponses.Error(new TokenError(TokenRequestErrors.UnauthorizedClient, "The client is not authorized to use the authorization_code grant type."));
-
         return await grant.ExchangeAsync(context, request, client).ConfigureAwait(false);
     }
 

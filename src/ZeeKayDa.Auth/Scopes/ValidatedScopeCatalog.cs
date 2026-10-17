@@ -42,6 +42,7 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
         var scopes = Copy(served, failures);
 
         CheckNamesArePresent(scopes, failures);
+        CheckNamesAreScopeTokens(scopes, failures);
         CheckNamesAreUnique(scopes, failures);
         CheckClaims(scopes, failures);
         CheckAudiences(scopes, failures);
@@ -135,6 +136,27 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
         }
     }
 
+    /// <summary>Every named scope is an RFC 6749 §3.3 scope-token, so it cannot split a space-delimited scope list.</summary>
+    private static void CheckNamesAreScopeTokens(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
+    {
+        foreach (var scope in scopes.Where(IsNamedButNotAScopeToken))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.name.invalid",
+                $"IScopeRepository returned a scope named '{scope.Name}', which is not a scope-token. RFC 6749 §3.3 " +
+                "allows only the printable ASCII characters other than space, '\"' and '\\' in a scope name, since " +
+                "the scope parameter and the scope claim are space-delimited lists of names."));
+        }
+    }
+
+    /// <summary>A blank name is reported as blank, not also as malformed.</summary>
+    private static bool IsNamedButNotAScopeToken(ScopeDefinition scope) =>
+        !string.IsNullOrWhiteSpace(scope.Name) && !scope.Name.All(IsScopeTokenCharacter);
+
+    /// <summary><c>NQCHAR = %x21 / %x23-5B / %x5D-7E</c> (RFC 6749 Appendix A).</summary>
+    private static bool IsScopeTokenCharacter(char c) =>
+        c is '!' or (>= '#' and <= '[') or (>= ']' and <= '~');
+
     /// <summary>
     /// No two scopes share an ordinal name: a duplicate resolves to whichever came first. Two sets rather than
     /// a <c>GroupBy</c>, since this runs on every request; one failure per repeated name.
@@ -200,15 +222,26 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
         }
     }
 
+    /// <summary>The <c>openid</c> scope is served and advertised in <c>scopes_supported</c>.</summary>
     private static void CheckOpenIdIsPresent(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
     {
-        if (scopes.Any(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal)))
-            return;
+        var openId = scopes.FirstOrDefault(scope => string.Equals(scope.Name, StandardScopes.OpenId.Name, StringComparison.Ordinal));
 
-        failures.Add(new ZeeKayDaConfigurationFailure(
-            "scopes.openid_missing",
-            $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
-            $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'."));
+        if (openId is null)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.openid_missing",
+                $"IScopeRepository must include the '{StandardScopes.OpenId.Name}' scope. " +
+                $"Every OpenID Connect authorization request is required to include '{StandardScopes.OpenId.Name}'."));
+        }
+        else if (!openId.IsDiscoverable)
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.openid_hidden",
+                $"The '{StandardScopes.OpenId.Name}' scope has IsDiscoverable set to false, which omits it from the " +
+                "discovery document's scopes_supported. OpenID Connect Discovery 1.0 §3 requires a server to " +
+                $"support '{StandardScopes.OpenId.Name}', so scopes_supported must advertise it; set IsDiscoverable to true."));
+        }
     }
 
     /// <summary>Every claim name a scope lists, across all three destinations.</summary>

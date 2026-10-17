@@ -21,21 +21,6 @@ internal static class TokenEndpointAuthMethodRules
     /// <summary>Whether the methods include <c>none</c>, compared ordinally whatever the set's own comparer.</summary>
     internal static bool AllowsNone(IEnumerable<string> methods) => methods.Any(IsNone);
 
-    /// <summary>Whether there is at least one method and every one is <c>none</c>: no methods allows nothing.</summary>
-    internal static bool AllowsOnlyNone(IEnumerable<string> methods)
-    {
-        var any = false;
-        foreach (var method in methods)
-        {
-            if (!IsNone(method))
-                return false;
-
-            any = true;
-        }
-
-        return any;
-    }
-
     private static bool IsNone(string? method)
         => string.Equals(method, TokenEndpointAuthMethods.None, StringComparison.Ordinal);
 }

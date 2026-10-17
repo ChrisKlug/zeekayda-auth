@@ -268,7 +268,7 @@ cannot choose between two providers.
 **Startup checks are gated on `GrantTypesSupported` — there is no separate machine-to-machine
 flag.** `GrantTypesSupported` already declares what the server does. When it lacks
 `AuthorizationCode`, the interactive machinery is declared unused and none of these checks fire —
-that is the clean startup for a `client_credentials`-only host — and `/connect/authorize` is neither
+that is the clean startup for a host without the code grant — and `/connect/authorize` is neither
 served nor advertised in discovery, so the endpoint and the metadata agree (#629). When it contains
 `AuthorizationCode`: rule 1 is a startup error (the message offers all three exits — add a
 provider, enable local sign-in, or remove `authorization_code`); rule 4 is a startup warning;

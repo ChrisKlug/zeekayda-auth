@@ -1,10 +1,8 @@
 using System.Net;
-using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Stores;
@@ -736,18 +734,6 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
-    public async Task A_handler_that_does_not_handle_requests_answers_404_at_its_callback()
-    {
-        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
-            auth.AddScheme<AuthenticationSchemeOptions, PlainHandler>("plain", "Plain", _ => { })));
-        using var client = NewClient(factory);
-
-        var callback = await client.GetAsync("/connect/callback/plain", Cancellation);
-
-        callback.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
     public async Task The_callback_and_resume_routes_stay_anonymous_under_a_host_fallback_policy()
     {
         using var factory = new TestWebAppFactoryWithFallbackAuthorizationPolicy(
@@ -976,16 +962,5 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         var signIn = async () => await client.GetAsync("/test/sign-in-external", Cancellation);
 
         await signIn.Should().ThrowAsync<InvalidOperationException>().WithMessage("*callback endpoint*");
-    }
-
-    /// <summary>A handler outside the request-handler contract: nothing to serve at its callback.</summary>
-    private sealed class PlainHandler(
-        IOptionsMonitor<AuthenticationSchemeOptions> options,
-        ILoggerFactory logger,
-        UrlEncoder encoder)
-        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
-    {
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-            => Task.FromResult(AuthenticateResult.NoResult());
     }
 }

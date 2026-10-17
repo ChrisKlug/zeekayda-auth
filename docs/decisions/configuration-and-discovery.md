@@ -91,7 +91,8 @@ advertisement shipped ahead of verification, because a PKCE-aware client trustin
 have been exposed to the interception attack PKCE prevents. Startup now fails when
 `GrantTypesSupported` contains the code grant and the collection lacks `S256`, so the grant cannot
 be served with the enforcement path unadvertised. `null` remains the omit state, valid only on a
-host without the grant; an empty collection is a validation error.
+host without the grant; an empty collection is a validation error. `GrantTypesSupported` itself may
+hold only a grant the token endpoint serves, today only `authorization_code`, or startup fails (RFC 8414 §2).
 
 **Configuration is never serialised to the wire.** The internal `IDiscoveryDocumentProvider` maps
 `AuthorizationServerOptions` onto `OpenIdConfigurationDocument`, the OIDC Discovery 1.0 wire model, so
@@ -110,7 +111,7 @@ with `signing.key_ring.missing`.
 registered `IClientAuthenticator` declares, plus `none`, which the framework performs itself — so a
 public client needs no server-wide opt-in, and is still held to PKCE `S256`.
 `TokenEndpoint.AdvertisedAuthMethods` only narrows: an entry nothing performs warns; nothing
-performable, or only `none` beside `client_credentials` (RFC 6749 §4.4), fails startup. Discovery,
+performable fails startup. Discovery,
 client registration and the token endpoint read one resolution. Never derived from the client store,
 which is replaceable.
 

@@ -163,6 +163,22 @@ public sealed class AuthorizationServerOptionsValidatorTests
     }
 
     [Theory]
+    [InlineData("https://auth.example.com")]
+    [InlineData("https://localhost:5001")]
+    public void Validate_fails_for_HTTPS_Issuer_with_AllowHttpLoopbackIssuer_flag(string issuer)
+    {
+        // Behind a same-host reverse proxy every request arrives from loopback, so the flag would
+        // exempt all traffic from the HTTPS requirement on a host that is meant to be HTTPS.
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = issuer,
+            Development = { AllowHttpLoopbackIssuer = true },
+        });
+
+        failures.Select(f => f.Code).Should().Equal("configuration.development.allow_http_loopback_issuer.https_issuer");
+    }
+
+    [Theory]
     [InlineData("https://auth.example.com/tenant1/")]
     [InlineData("https://auth.example.com/a/b/c/")]
     [InlineData("http://localhost:5000/tenant1/", true)]
@@ -352,6 +368,33 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("GrantTypesSupported").And.Contain(nameof(GrantType));
     }
 
+    [Theory]
+    [InlineData(GrantType.RefreshToken)]
+    [InlineData(GrantType.ClientCredentials)]
+    public void Validate_fails_when_GrantTypesSupported_contains_a_grant_the_token_endpoint_does_not_serve(GrantType grantType)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, grantType],
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.grant_types_supported.not_served")
+            .Which.Message.Should().Contain($"GrantType.{grantType}");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_GrantTypesSupported_is_empty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [],
+        });
+
+        failures.Should().BeEmpty("a host serving no grant declares it has no interactive flow");
+    }
+
     [Fact]
     public void Validate_succeeds_when_AdvertisedAuthMethods_is_null()
     {
@@ -473,7 +516,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
+            GrantTypesSupported = [],
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
         });
 
@@ -1372,10 +1415,10 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().BeEmpty();
     }
 
-    // ── Cross-field: RefreshTokenLifetime >= AuthorizationCodeLifetime ────────────────────────────
+    // ── Lifetime relationships ───────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Validate_fails_when_RefreshTokenLifetime_is_less_than_AuthorizationCodeLifetime()
+    public void Validate_succeeds_when_RefreshTokenLifetime_is_shorter_than_AuthorizationCodeLifetime()
     {
         var failures = Validate(new AuthorizationServerOptions
         {
@@ -1384,66 +1427,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
             TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
         });
 
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime")
-            .Which.Message.Should().Contain("RefreshTokenLifetime must be greater than or equal to");
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_RefreshTokenLifetime_equals_AuthorizationCodeLifetime()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromSeconds(60) },
-        });
-
         failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_succeeds_when_RefreshTokenLifetime_is_greater_than_AuthorizationCodeLifetime()
-    {
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
-        });
-
-        failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void Validate_does_not_emit_cross_field_error_when_RefreshTokenLifetime_is_zero()
-    {
-        // RefreshTokenLifetime = zero triggers the per-field zero check; the cross-field guard
-        // must NOT fire because its condition requires both values to be positive.
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.FromSeconds(60) },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.Zero },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.token_endpoint.refresh_token_lifetime.not_positive")
-            .Which.Message.Should().Contain("greater than zero");
-    }
-
-    [Fact]
-    public void Validate_does_not_emit_cross_field_error_when_AuthorizationCodeLifetime_is_zero()
-    {
-        // AuthorizationCodeLifetime = zero triggers the per-field zero check; the cross-field guard
-        // must NOT fire because its condition requires both values to be positive.
-        var failures = Validate(new AuthorizationServerOptions
-        {
-            Issuer = "https://auth.example.com",
-            AuthorizationEndpoint = { AuthorizationCodeLifetime = TimeSpan.Zero },
-            TokenEndpoint = { RefreshTokenLifetime = TimeSpan.FromDays(1) },
-        });
-
-        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.authorization_code_lifetime.not_positive")
-            .Which.Message.Should().Contain("AuthorizationCodeLifetime must be greater than zero");
     }
 
     // ── ClockSkewTolerance — non-negative constraint ─────────────────────────────────────────────

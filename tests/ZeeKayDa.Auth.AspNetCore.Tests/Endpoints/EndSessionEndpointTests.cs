@@ -362,6 +362,19 @@ public sealed class EndSessionEndpointTests
         (await HasSessionAsync(host, jar)).Should().BeTrue("the browser holding the session was never asked");
     }
 
+    [Fact]
+    public async Task An_unreadable_session_cookie_is_deleted_and_the_browsers_other_interactions_are_left_alone()
+    {
+        // An expired ticket, or a cookie tossed in from a sibling subdomain, is no session to end.
+        var binding = InteractionBindingCookie.NamePrefix + "other-interaction";
+        var jar = CookieJar.Empty.With(ZeeKayDaCookies.Session, "unreadable").With(binding, "secret");
+
+        var response = await EndSessionEmptyPostAsync(EndpointHost.Default, jar);
+
+        response.Headers.GetValues("Set-Cookie").Should().ContainSingle()
+            .Which.Should().StartWith(ZeeKayDaCookies.Session + "=");
+    }
+
     // ── Store failures ────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -543,6 +556,13 @@ public sealed class EndSessionEndpointTests
         private readonly Dictionary<string, string> _cookies = new(StringComparer.Ordinal);
 
         public static CookieJar Empty => new();
+
+        /// <summary>This jar with <paramref name="name"/> set to <paramref name="value"/>, for a cookie no response set.</summary>
+        public CookieJar With(string name, string value)
+        {
+            _cookies[name] = value;
+            return this;
+        }
 
         /// <summary>A jar holding only the named cookie from this one, for a forged cross-site request.</summary>
         public CookieJar OnlyContaining(string name)

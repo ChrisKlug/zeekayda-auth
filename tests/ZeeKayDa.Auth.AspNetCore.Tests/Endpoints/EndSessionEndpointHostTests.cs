@@ -83,7 +83,7 @@ public sealed class EndSessionEndpointHostTests
     [Fact]
     public async Task The_endpoint_is_not_served_on_a_host_without_the_code_grant()
     {
-        using var factory = new TestWebAppFactory(options => options.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var factory = new TestWebAppFactory(options => options.GrantTypesSupported = []);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://test.example.com") });
 
         var response = await client.GetAsync(EndSessionPath, Cancellation);
@@ -237,6 +237,27 @@ public sealed class EndSessionEndpointHostTests
         var confirmed = await PostEmptyFormAsync(_client, Location(asked));
         confirmed.StatusCode.Should().Be(HttpStatusCode.OK);
         confirmed.Headers.Location.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_hint_with_the_wrong_audience_sends_the_user_to_the_signed_out_page_not_the_client()
+    {
+        // The redirect URI is App's own registration, but a hint that fails to validate is an
+        // error in the request, and an erroneous request is never redirected to the client.
+        var idToken = await SignInForIdTokenAsync(_client, TrustedApp);
+        var browserWithoutSession = _host.NewFlowClient();
+
+        var response = await EndSessionAsync(browserWithoutSession, new()
+        {
+            ["id_token_hint"] = idToken,
+            ["client_id"] = App,
+            ["post_logout_redirect_uri"] = AppSignedOut,
+            ["state"] = State,
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Location.Should().BeNull();
+        (await response.Content.ReadAsStringAsync(Cancellation)).Should().Contain("You have been signed out.");
     }
 
     // ── The host's logout page ────────────────────────────────────────────────────────────────────

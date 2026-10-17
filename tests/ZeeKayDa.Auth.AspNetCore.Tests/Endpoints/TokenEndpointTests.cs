@@ -37,8 +37,6 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialClient = "confidential-client";
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
-    private const string NoCodeGrantClient = "no-code-grant-client";
-    private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
     private const string ThrowingHasherClient = "throwing-hasher-client";
@@ -59,11 +57,13 @@ public sealed class TokenEndpointTests : IDisposable
     private readonly FakeTimeProvider _time = new(Now);
     private readonly CapturingLoggerProvider _logs = new();
     private readonly RecordingRefreshTokenBackingStore _refreshTokens = new();
-    private readonly SwitchableBackingStore _backingStore = new();
+    private readonly SwitchableBackingStore _backingStore;
     private readonly EndpointHost _host;
 
     public TokenEndpointTests()
     {
+        // On the host's clock, so a code the test treats as live is never evicted as expired by the real one.
+        _backingStore = new SwitchableBackingStore(_time);
         _host = NewHost();
     }
 
@@ -74,20 +74,13 @@ public sealed class TokenEndpointTests : IDisposable
     private EndpointHost NewHost(
         Action<AuthorizationServerOptions>? configureOptions = null,
         bool withThrowingHasher = false) => new(
-        configureOptions: options =>
-        {
-            // Served so the no-code-grant client, allowed only client_credentials, is a registration
-            // startup accepts: a client may be allowed only the grants its server serves.
-            options.GrantTypesSupported.Add(GrantType.ClientCredentials);
-            configureOptions?.Invoke(options);
-        },
+        configureOptions: options => configureOptions?.Invoke(options),
         configureBuilder: builder =>
         {
             builder.Services.AddSingleton<TimeProvider>(_time);
             builder.Services.AddLogging(logging => logging.AddProvider(_logs));
             builder.AddInMemoryClients(clients => clients
                 .Add(PublicRegistration())
-                .Add(NoCodeGrantRegistration())
                 .AddConfidential(ConfidentialClient, client =>
                 {
                     client.Secret = ConfidentialSecret;
@@ -120,12 +113,6 @@ public sealed class TokenEndpointTests : IDisposable
         Client.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
             with
         { RequireConsent = false };
-
-    /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
-    private static Client NoCodeGrantRegistration() =>
-        Client.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
-            with
-        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
     private static Client PkceOptionalRegistration() =>
@@ -862,15 +849,6 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(response, "invalid_client");
     }
 
-    [Fact]
-    public async Task A_client_not_allowed_the_code_grant_is_refused_with_unauthorized_client()
-    {
-        var response = await PostTokenAsync(
-            TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient), basic: (NoCodeGrantClient, NoCodeGrantSecret));
-
-        await ShouldBeErrorAsync(response, "unauthorized_client");
-    }
-
     // ── The request's shape ───────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -891,7 +869,7 @@ public sealed class TokenEndpointTests : IDisposable
         // common store, must not be redeemable on a host whose configuration no longer serves it.
         var repository = new FirstReadThenOtherRepository(PublicRegistration(), PublicRegistration());
         using var host = new EndpointHost(
-            configureOptions: options => options.GrantTypesSupported = [GrantType.ClientCredentials],
+            configureOptions: options => options.GrantTypesSupported = [],
             configureBuilder: builder => builder.Services.AddSingleton<IClientRepository>(repository));
         repository.ResetToFirst();
 
@@ -1156,9 +1134,9 @@ public sealed class TokenEndpointTests : IDisposable
     }
 
     /// <summary>An in-memory backing store that can be made to fail every operation, as an unreachable cache would.</summary>
-    private sealed class SwitchableBackingStore : IAuthorizationCodeBackingStore
+    private sealed class SwitchableBackingStore(TimeProvider timeProvider) : IAuthorizationCodeBackingStore
     {
-        private readonly InMemoryAuthorizationCodeBackingStore _inner = new();
+        private readonly InMemoryAuthorizationCodeBackingStore _inner = new(timeProvider);
 
         public bool Fail { get; set; }
 

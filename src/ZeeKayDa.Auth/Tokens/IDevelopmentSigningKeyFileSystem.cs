@@ -4,7 +4,8 @@ namespace ZeeKayDa.Auth.Tokens;
 internal interface IDevelopmentSigningKeyFileSystem
 {
     /// <summary>
-    /// Creates <paramref name="directory"/> and any missing parents owner-only, and throws
+    /// Creates <paramref name="directory"/> and any missing parents owner-only, with a <c>.gitignore</c>
+    /// ignoring everything in a directory it creates, and throws
     /// <see cref="ZeeKayDaConfigurationException"/> when it ends up broader than owner-only.
     /// </summary>
     /// <param name="directory">The directory path to create or validate.</param>

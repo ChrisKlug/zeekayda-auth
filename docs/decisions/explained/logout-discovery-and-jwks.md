@@ -12,7 +12,8 @@ JWKS is in `signing-keys.md`; principles that apply beyond this part are in `pri
   signed; expiry is not checked, since a client sends the one it got at sign-in. If `client_id` is
   sent too, they must agree.
 - `post_logout_redirect_uri` is used only if it is registered for that client, exact match, or the
-  endpoint would be an open redirect. `state` is echoed, up to 2048 characters.
+  endpoint would be an open redirect, and never after a hint that failed: §4 forbids redirecting
+  after an error in the request. `state` is echoed, up to 2048 characters.
 - With no session, the user is signed out at once. Otherwise the user is **asked**, because any page
   can trigger a logout with a link, unless the hint is valid, the client set
   `SkipLogoutConfirmation`, and the hint names the user who is signed in.
@@ -25,8 +26,9 @@ bound to the session it asked about, so a user who signed in again since cannot 
 it, nor shown the old subject. The client and redirect are checked again at confirm time.
 
 **Signing out** deletes the session cookie only when the request carries it; the cookie is
-`SameSite=Lax`, so a cross-site POST cannot end a session. It also deletes every interaction
-binding in the browser, tombstones included, so no half-finished sign-in in another tab survives. The
+`SameSite=Lax`, so a cross-site POST cannot end a session. When that cookie reads as a session it
+also deletes every interaction binding in the browser, tombstones included, so no half-finished
+sign-in in another tab survives; an unreadable one is no session, and leaves them alone. The
 browser goes to the registered redirect with `state`, or `SignedOutPath`, or a built-in page.
 
 ## Discovery

@@ -93,7 +93,19 @@ internal static partial class AuthorizationServerOptionsValidation
                 $"AuthorizationServerOptions.Issuer '{shown}' uses HTTP for a non-loopback host. " +
                 "Development.AllowHttpLoopbackIssuer only permits HTTP loopback issuers for local development and testing.");
         }
+
+        if (options.Development.AllowHttpLoopbackIssuer && IsHttps(uri))
+        {
+            yield return new(
+                "configuration.development.allow_http_loopback_issuer.https_issuer",
+                $"Development.AllowHttpLoopbackIssuer is true, but AuthorizationServerOptions.Issuer '{shown}' uses https. " +
+                "The flag exists only for an http loopback issuer, and on an https issuer it would still let every " +
+                "request arriving from a loopback address, such as through a reverse proxy on the same host, bypass " +
+                "the HTTPS requirement. Remove Development.AllowHttpLoopbackIssuer = true.");
+        }
     }
+
+    private static bool IsHttps(Uri uri) => string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateIssuerCanonicalForm(string issuer, string shown, Uri uri)
     {
