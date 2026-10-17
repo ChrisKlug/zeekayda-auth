@@ -79,6 +79,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
                 providers = request.Providers.Count,
                 providerReturn = request.ProviderReturn is not null,
                 loginHint = request.LoginHint,
+                reauthenticationRequired = request.ReauthenticationRequired,
             });
         });
 
@@ -274,6 +275,59 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
 
         var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
         page.GetProperty("loginHint").GetString().Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_when_the_client_sends_prompt_login()
+    {
+        var query = ValidQuery();
+        query["prompt"] = "login";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_when_the_session_is_older_than_max_age()
+    {
+        await SignInAsync();
+        Time.Advance(TimeSpan.FromMinutes(10));
+        var query = ValidQuery();
+        query["max_age"] = "60";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_for_max_age_with_no_session()
+    {
+        var query = ValidQuery();
+        query["max_age"] = "3600";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_no_reauthentication_required_on_an_ordinary_arrival_with_no_session()
+    {
+        var page = await RenderLoginPageAsync(ValidQuery());
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeFalse();
+    }
+
+    /// <summary>Starts an authorization request and returns what the login page was told to render for.</summary>
+    private async Task<System.Text.Json.JsonElement> RenderLoginPageAsync(Dictionary<string, string?> query)
+    {
+        var handoff = await AuthorizeAsync(query);
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
     }
 
     [Fact]
