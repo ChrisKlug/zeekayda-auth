@@ -368,6 +368,33 @@ public sealed class AuthorizationServerOptionsValidatorTests
             .Which.Message.Should().Contain("GrantTypesSupported").And.Contain(nameof(GrantType));
     }
 
+    [Theory]
+    [InlineData(GrantType.RefreshToken)]
+    [InlineData(GrantType.ClientCredentials)]
+    public void Validate_fails_when_GrantTypesSupported_contains_a_grant_the_token_endpoint_does_not_serve(GrantType grantType)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [GrantType.AuthorizationCode, grantType],
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.grant_types_supported.not_served")
+            .Which.Message.Should().Contain($"GrantType.{grantType}");
+    }
+
+    [Fact]
+    public void Validate_succeeds_when_GrantTypesSupported_is_empty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            GrantTypesSupported = [],
+        });
+
+        failures.Should().BeEmpty("a host serving no grant declares it has no interactive flow");
+    }
+
     [Fact]
     public void Validate_succeeds_when_AdvertisedAuthMethods_is_null()
     {
@@ -489,7 +516,7 @@ public sealed class AuthorizationServerOptionsValidatorTests
         var failures = Validate(new AuthorizationServerOptions
         {
             Issuer = "https://auth.example.com",
-            GrantTypesSupported = [GrantType.ClientCredentials],
+            GrantTypesSupported = [],
             AuthorizationEndpoint = { CodeChallengeMethodsSupported = null },
         });
 

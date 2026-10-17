@@ -37,8 +37,6 @@ public sealed class TokenEndpointTests : IDisposable
     private const string ConfidentialClient = "confidential-client";
     private const string ConfidentialSecret = "very-secret";
     private const string OtherClient = "other-client";
-    private const string NoCodeGrantClient = "no-code-grant-client";
-    private const string NoCodeGrantSecret = "no-code-grant-secret";
     private const string PkceOptionalClient = "pkce-optional-client";
     private const string PkceOptionalSecret = "also-very-secret";
     private const string ThrowingHasherClient = "throwing-hasher-client";
@@ -76,20 +74,13 @@ public sealed class TokenEndpointTests : IDisposable
     private EndpointHost NewHost(
         Action<AuthorizationServerOptions>? configureOptions = null,
         bool withThrowingHasher = false) => new(
-        configureOptions: options =>
-        {
-            // Served so the no-code-grant client, allowed only client_credentials, is a registration
-            // startup accepts: a client may be allowed only the grants its server serves.
-            options.GrantTypesSupported.Add(GrantType.ClientCredentials);
-            configureOptions?.Invoke(options);
-        },
+        configureOptions: options => configureOptions?.Invoke(options),
         configureBuilder: builder =>
         {
             builder.Services.AddSingleton<TimeProvider>(_time);
             builder.Services.AddLogging(logging => logging.AddProvider(_logs));
             builder.AddInMemoryClients(clients => clients
                 .Add(PublicRegistration())
-                .Add(NoCodeGrantRegistration())
                 .AddConfidential(ConfidentialClient, client =>
                 {
                     client.Secret = ConfidentialSecret;
@@ -122,12 +113,6 @@ public sealed class TokenEndpointTests : IDisposable
         Client.CreatePublic(PublicClient, [RegisteredRedirect], [], ["openid", "profile", "email"])
             with
         { RequireConsent = false };
-
-    /// <summary>A confidential client allowed only client_credentials, the grant RFC 6749 §4.4 keeps to confidential clients.</summary>
-    private static Client NoCodeGrantRegistration() =>
-        Client.CreateConfidential(NoCodeGrantClient, Pbkdf2(NoCodeGrantSecret), [RegisteredRedirect], [], ["openid"])
-            with
-        { AllowedGrantTypes = new HashSet<GrantType> { GrantType.ClientCredentials } };
 
     /// <summary>A first-party confidential client the operator trusts to check the nonce, so it may leave PKCE out.</summary>
     private static Client PkceOptionalRegistration() =>
@@ -864,15 +849,6 @@ public sealed class TokenEndpointTests : IDisposable
         await ShouldBeErrorAsync(response, "invalid_client");
     }
 
-    [Fact]
-    public async Task A_client_not_allowed_the_code_grant_is_refused_with_unauthorized_client()
-    {
-        var response = await PostTokenAsync(
-            TokenForm(StoreKeyGenerator.Generate(), NoCodeGrantClient), basic: (NoCodeGrantClient, NoCodeGrantSecret));
-
-        await ShouldBeErrorAsync(response, "unauthorized_client");
-    }
-
     // ── The request's shape ───────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -893,7 +869,7 @@ public sealed class TokenEndpointTests : IDisposable
         // common store, must not be redeemable on a host whose configuration no longer serves it.
         var repository = new FirstReadThenOtherRepository(PublicRegistration(), PublicRegistration());
         using var host = new EndpointHost(
-            configureOptions: options => options.GrantTypesSupported = [GrantType.ClientCredentials],
+            configureOptions: options => options.GrantTypesSupported = [],
             configureBuilder: builder => builder.Services.AddSingleton<IClientRepository>(repository));
         repository.ResetToFirst();
 

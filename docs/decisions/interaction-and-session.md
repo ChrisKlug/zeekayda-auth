@@ -132,7 +132,7 @@ subject together, never the upstream value: two providers can never share a sess
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
 address. Local off with one provider → challenge it directly; otherwise `LoginPath` → redirect there; a `LoginPath`
 nulled when the page is needed → `server_error`, warned at startup; local off, no providers → startup error. Checks
-fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a `client_credentials`-only host starts
+fire only when `GrantTypesSupported` contains `AuthorizationCode`, so a host without the code grant starts
 clean. The conditions are exact: a warning that cries wolf trains people to ignore it.
 
 **Home realm discovery never consults the host's user store.** Framework HRD (deferred, unbuilt) is domain

@@ -242,8 +242,7 @@ user on every renewal, and a renewal sent with `prompt=none` is answered `consen
 client registered with `RequireConsent = false` renews without the user seeing anything. Turn
 consent off for that reason alone only for your own first-party applications — it is the control
 that lets a user notice an authorization request they never started. The refresh-token grant is not
-served yet, so putting `GrantType.RefreshToken` in `GrantTypesSupported` advertises it in discovery
-without making it work.
+served yet, so putting `GrantType.RefreshToken` in `GrantTypesSupported` fails startup.
 
 ---
 
@@ -356,7 +355,9 @@ document. This value lives in the `Response` options group.
 | Required | Yes (must not be null) |
 
 The grant types this server supports. Published as `grant_types_supported` in the discovery
-document.
+document. Only the authorization code grant is served: any other `GrantType` fails startup with
+`configuration.grant_types_supported.not_served`, since the document may name only grants the server
+supports. An empty collection declares a host with no interactive flow.
 
 | Enum value | JSON serialization |
 |---|---|
@@ -393,11 +394,6 @@ The filter can only withhold a method, never add one:
   (`token_endpoint.advertised_auth_methods.casing`).
 - An empty filter fails startup; `null` advertises everything.
 - Each entry must be a non-empty string with no surrounding whitespace and no control characters.
-
-If `GrantTypesSupported` includes `GrantType.ClientCredentials`, at least one method other than
-`"none"` must be advertised ([RFC 6749 §4.4](https://www.rfc-editor.org/rfc/rfc6749#section-4.4),
-[RFC 9700 §2.6](https://www.rfc-editor.org/rfc/rfc9700#section-2.6)); otherwise startup fails with
-`token_endpoint.advertised_auth_methods.only_none_with_client_credentials`.
 
 | `TokenEndpointAuthMethods` constant | String value |
 |---|---|
@@ -621,6 +617,7 @@ startup output and host logs.
 | `configuration.response.modes_supported.null` | `Response.ModesSupported` is `null` |
 | `configuration.grant_types_supported.null` | `GrantTypesSupported` is `null` |
 | `configuration.grant_types_supported.undefined_value` | `GrantTypesSupported` contains an out-of-range `GrantType` cast |
+| `configuration.grant_types_supported.not_served` | `GrantTypesSupported` contains a grant other than `AuthorizationCode`, which the token endpoint does not serve |
 | `configuration.token_endpoint.advertised_auth_methods.empty` | `TokenEndpoint.AdvertisedAuthMethods` is empty |
 | `configuration.token_endpoint.advertised_auth_methods.invalid_entry` | a `TokenEndpoint.AdvertisedAuthMethods` entry is blank, has surrounding whitespace, or contains a control character |
 | `configuration.token_endpoint.access_token_lifetime.not_positive` | `TokenEndpoint.AccessTokenLifetime` is zero or negative |

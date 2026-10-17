@@ -62,7 +62,7 @@ public sealed class AuthorizationEndpointHostTests(FallbackPolicyHostFixture fal
         // GrantTypesSupported is the declaration that the interactive machinery is unused. Before,
         // such a host accepted response_type=code, wrote an interaction context and answered
         // server_error while its metadata said the grant was unsupported.
-        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var factory = new TestWebAppFactory(opts => opts.GrantTypesSupported = []);
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://test.example.com"),

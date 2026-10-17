@@ -1,16 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
-/// Checks at startup that the advertised token endpoint auth methods are what the filter meant and can
-/// serve the configured grants. An activator because resolving them builds the host's authenticators.
+/// Checks at startup that the advertised token endpoint auth methods are what the filter meant and
+/// accept some client. An activator because resolving them builds the host's authenticators.
 /// </summary>
-internal sealed class AdvertisedAuthMethodsActivator(
-    IOptions<AuthorizationServerOptions> options,
-    IServiceProvider services) : IStartupActivator
+internal sealed class AdvertisedAuthMethodsActivator(IServiceProvider services) : IStartupActivator
 {
     /// <inheritdoc/>
     public string Name => "AdvertisedAuthMethods";
@@ -65,7 +62,7 @@ internal sealed class AdvertisedAuthMethodsActivator(
         }
     }
 
-    private void VerifyAdvertisedSet(StartupVerificationContext context, AdvertisedAuthMethods advertised)
+    private static void VerifyAdvertisedSet(StartupVerificationContext context, AdvertisedAuthMethods advertised)
     {
         if (advertised.Methods.Count == 0)
         {
@@ -74,18 +71,6 @@ internal sealed class AdvertisedAuthMethodsActivator(
                 "TokenEndpoint.AdvertisedAuthMethods names no method the server performs, so the token " +
                 "endpoint would accept no client. Name a method a registered client authenticator " +
                 $"performs, or '{TokenEndpointAuthMethods.None}', or set the filter to null.");
-        }
-        else if (options.Value.GrantTypesSupported.Contains(GrantType.ClientCredentials)
-            && TokenEndpointAuthMethodRules.AllowsOnlyNone(advertised.Methods))
-        {
-            // The client credentials grant requires client authentication (RFC 6749 §4.4, RFC 9700 §2.6).
-            context.AddFailure(
-                "token_endpoint.advertised_auth_methods.only_none_with_client_credentials",
-                "GrantTypesSupported includes 'client_credentials', which requires confidential clients, " +
-                "but the only advertised token endpoint auth method is 'none'. Register a client " +
-                "authenticator (AddZeeKayDaAuth registers the client-secret one), or stop " +
-                "TokenEndpoint.AdvertisedAuthMethods withholding its methods. " +
-                "See RFC 6749 §4.4 and OAuth 2.0 Security BCP §2.6 (RFC 9700).");
         }
     }
 }

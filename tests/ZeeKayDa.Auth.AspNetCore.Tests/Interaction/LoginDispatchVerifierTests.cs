@@ -23,7 +23,7 @@ public sealed class LoginDispatchVerifierTests
         var options = new AuthorizationServerOptions { Issuer = "https://auth.example.com" };
         options.AuthorizationEndpoint.Interaction.LoginPath = loginPath;
         options.AuthorizationEndpoint.Interaction.SupportsLocalSignIn = supportsLocalSignIn;
-        options.GrantTypesSupported = authorizationCode ? [GrantType.AuthorizationCode] : [GrantType.ClientCredentials];
+        options.GrantTypesSupported = authorizationCode ? [GrantType.AuthorizationCode] : [];
 
         var registry = ProviderRegistry.Empty.Add(
             Enumerable.Range(1, providerCount)
@@ -127,7 +127,7 @@ public sealed class LoginDispatchVerifierTests
     [Fact]
     public async Task A_host_without_the_authorization_code_grant_is_checked_for_nothing()
     {
-        // A client_credentials-only host has no login dispatch: nothing can be wrong with it.
+        // A host without the code grant has no login dispatch: nothing can be wrong with it.
         var context = await VerifyAsync(loginPath: null, supportsLocalSignIn: false, providerCount: 0, authorizationCode: false);
 
         context.Warnings.Should().BeEmpty();

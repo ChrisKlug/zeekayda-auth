@@ -29,9 +29,7 @@ public sealed class TokenEndpointOptions
     /// </para>
     /// <para>
     /// <see cref="TokenEndpointAuthMethods.None"/> is how public clients authenticate, so leaving it out
-    /// refuses them. A filter that leaves only <c>none</c> fails startup while
-    /// <see cref="AuthorizationServerOptions.GrantTypesSupported"/> includes
-    /// <see cref="GrantType.ClientCredentials"/>.
+    /// refuses them.
     /// </para>
     /// <para>
     /// Maps to the <c>token_endpoint_auth_methods_supported</c> discovery metadata field.
@@ -86,7 +84,7 @@ public sealed class TokenEndpointOptions
     /// still signed in is not asked to sign in again, but is asked for consent again unless the client has
     /// <see cref="Clients.IClient.RequireConsent"/> off. The refresh-token grant is not served, so listing
     /// <see cref="GrantType.RefreshToken"/> in <see cref="AuthorizationServerOptions.GrantTypesSupported"/>
-    /// advertises it without making it work.
+    /// fails startup.
     /// </para>
     /// <para>
     /// A client may override it through <see cref="Clients.IClient.AccessTokenLifetime"/>. Must be greater
