@@ -56,7 +56,7 @@ public sealed class LoginRequest
     /// </summary>
     /// <remarks>
     /// When this is <see langword="true"/>, the page must have the user actively authenticate
-    /// before calling <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, System.Security.Claims.Claim[])"/>:
+    /// before calling <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string})"/>:
     /// a cookie of the host's own, or any other sign-in the user already holds, is not enough. When
     /// it is <see langword="false"/>, a page may sign in a user it already knows without asking
     /// for credentials again.

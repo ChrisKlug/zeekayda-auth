@@ -14,6 +14,7 @@ internal sealed class SessionSubject
 
     public string Value { get; }
 
+    /// <summary>The subject, once it has passed the rule.</summary>
     /// <exception cref="ArgumentNullException"><paramref name="subject"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space.
