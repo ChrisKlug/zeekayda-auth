@@ -5,47 +5,57 @@ namespace ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 
 /// <summary>
 /// The session subject an auto-promoted external principal gets: derived, never the upstream
-/// value, and separated by provider and issuer.
+/// value, and separated by issuer.
 /// </summary>
 public sealed class ExternalSubjectTests
 {
     [Fact]
     public void Derive_is_deterministic_fixed_length_and_url_safe()
     {
-        var first = ExternalSubject.Derive("acme", "https://acme.example.net", "42");
-        var second = ExternalSubject.Derive("acme", "https://acme.example.net", "42");
+        var first = ExternalSubject.Derive("https://acme.example.net", "42");
+        var second = ExternalSubject.Derive("https://acme.example.net", "42");
 
         first.Should().Be(second);
         first.Should().HaveLength(43).And.MatchRegex("^[A-Za-z0-9_-]+$");
     }
 
     [Theory]
-    [InlineData("acme", "https://acme.example.net", "43")]
-    [InlineData("acme", "https://other.example.net", "42")]
-    [InlineData("globex", "https://acme.example.net", "42")]
-    [InlineData("Acme", "https://acme.example.net", "42")]
-    public void Derive_changes_when_any_part_changes(string provider, string issuer, string subject)
+    [InlineData("https://acme.example.net", "43")]
+    [InlineData("https://other.example.net", "42")]
+    [InlineData("https://Acme.example.net", "42")]
+    public void Derive_changes_when_any_part_changes(string issuer, string subject)
     {
-        var baseline = ExternalSubject.Derive("acme", "https://acme.example.net", "42");
+        var baseline = ExternalSubject.Derive("https://acme.example.net", "42");
 
-        ExternalSubject.Derive(provider, issuer, subject).Should().NotBe(baseline);
+        ExternalSubject.Derive(issuer, subject).Should().NotBe(baseline);
     }
 
     [Fact]
     public void Derive_separates_the_parts_by_length_so_boundaries_cannot_collide()
     {
         // With a separator or plain concatenation, ("ab", "c") and ("a", "bc") could hash alike.
-        ExternalSubject.Derive("ab", "c", "x").Should().NotBe(ExternalSubject.Derive("a", "bc", "x"));
-        ExternalSubject.Derive("a", "bc", "x").Should().NotBe(ExternalSubject.Derive("a", "b", "cx"));
+        ExternalSubject.Derive("ab", "c").Should().NotBe(ExternalSubject.Derive("a", "bc"));
+    }
+
+    [Fact]
+    public void Derive_is_the_same_under_two_registration_names_of_one_issuer()
+    {
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net")], "upstream"));
+
+        var throughAcme = ExternalSubject.ForPromotion("acme", upstream);
+        var throughGlobex = ExternalSubject.ForPromotion("globex", upstream);
+
+        throughGlobex.FindFirst("sub")!.Value.Should().Be(throughAcme.FindFirst("sub")!.Value)
+            .And.Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Theory]
-    [InlineData("", "https://acme.example.net", "42")]
-    [InlineData("acme", "", "42")]
-    [InlineData("acme", "https://acme.example.net", "")]
-    public void Derive_refuses_an_empty_part(string provider, string issuer, string subject)
+    [InlineData("", "42")]
+    [InlineData("https://acme.example.net", "")]
+    public void Derive_refuses_an_empty_part(string issuer, string subject)
     {
-        var act = () => ExternalSubject.Derive(provider, issuer, subject);
+        var act = () => ExternalSubject.Derive(issuer, subject);
 
         act.Should().Throw<ArgumentException>();
     }
@@ -62,7 +72,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindAll("sub").Select(claim => claim.Value).Should().Equal(ExternalSubject.Derive("acme", "https://acme.example.net", "42"));
+        promoted.FindAll("sub").Select(claim => claim.Value).Should().Equal(ExternalSubject.Derive("https://acme.example.net", "42"));
         promoted.FindFirst(ClaimTypes.NameIdentifier).Should().BeNull("the upstream identifier is never carried verbatim");
         promoted.FindFirst("email")!.Value.Should().Be("user@example.net");
     }
@@ -75,7 +85,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("acme", "https://acme.example.net", "42"));
+        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]
@@ -91,7 +101,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("acme", "https://acme.example.net", "42"));
+        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]

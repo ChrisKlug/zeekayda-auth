@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// The session subject of an external principal, derived from the provider's registration name,
-/// the subject claim's issuer and the upstream value: upstream subjects are unique only per issuer.
+/// The session subject of an external principal, derived from the subject claim's issuer and the
+/// upstream value: upstream subjects are unique only per issuer.
 /// </summary>
 public static class ExternalSubject
 {
@@ -34,11 +34,11 @@ public static class ExternalSubject
         {
             throw new ZeeKayDaInteractionException(
                 $"The subject claim provider '{providerId}' returned names no issuer. Upstream subjects " +
-                "are unique only within their issuer, so the session subject is derived from the provider, " +
-                "the issuer and the subject together. Create the claim with its issuer set.");
+                "are unique only within their issuer, so the session subject is derived from the issuer and " +
+                "the subject together. Create the claim with its issuer set.");
         }
 
-        var claims = new List<Claim> { new("sub", Derive(providerId, subject.Issuer, subject.Value)) };
+        var claims = new List<Claim> { new("sub", Derive(subject.Issuer, subject.Value)) };
         claims.AddRange(principal.Claims.Where(claim =>
             !SubjectClaimTypes.Contains(claim.Type, StringComparer.OrdinalIgnoreCase)));
 
@@ -67,36 +67,34 @@ public static class ExternalSubject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Use it to link a local account to an external user before they first sign in, or to move
-    /// users across a renamed provider registration: the registration name is part of the result,
-    /// so renaming one gives every user who signed in through it a new subject.
+    /// The issuer namespaces the upstream subject, so the provider's registration name plays no
+    /// part: two registrations of one issuer share their users' identities, and renaming a
+    /// registration changes no subject. Use it to compute the subject an external user will get, to
+    /// link a local account to them before they first sign in.
     /// </para>
     /// <para>
-    /// Every part is compared exactly, case included. The result is
-    /// <c>base64url(SHA-256(length-prefixed provider, issuer, subject))</c>, so no two inputs collide
-    /// on a separator.
+    /// Both parts are compared exactly, case included. The result is
+    /// <c>base64url(SHA-256(length-prefixed issuer, subject))</c>, so no two inputs collide on a
+    /// separator.
     /// </para>
     /// </remarks>
-    /// <param name="providerId">The provider's registration name, as given to <c>WithProviders</c>.</param>
     /// <param name="issuer">The issuer of the provider's subject claim (<see cref="Claim.Issuer"/>).</param>
     /// <param name="subject">The user's subject at the provider: the value of its <c>sub</c> or name-identifier claim.</param>
     /// <returns>The derived subject, 43 URL-safe characters.</returns>
     /// <exception cref="ArgumentNullException">
-    /// <paramref name="providerId"/>, <paramref name="issuer"/> or <paramref name="subject"/> is <see langword="null"/>.
+    /// <paramref name="issuer"/> or <paramref name="subject"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="providerId"/>, <paramref name="issuer"/> or <paramref name="subject"/> is empty.
+    /// <paramref name="issuer"/> or <paramref name="subject"/> is empty.
     /// </exception>
-    public static string Derive(string providerId, string issuer, string subject)
+    public static string Derive(string issuer, string subject)
     {
-        ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentException.ThrowIfNullOrEmpty(issuer);
         ArgumentException.ThrowIfNullOrEmpty(subject);
 
         using var buffer = new MemoryStream();
         using (var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true))
         {
-            writer.Write(providerId);
             writer.Write(issuer);
             writer.Write(subject);
         }

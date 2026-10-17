@@ -51,13 +51,6 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// May be called more than once. Names must be unique ignoring case, and 1 to 64 ASCII letters,
     /// digits, <c>-</c>, <c>_</c> or <c>.</c>. A failing call leaves the service collection unchanged.
     /// </para>
-    /// <para>
-    /// A scheme's name is part of the identity of every user who signs in through it: the subject
-    /// relying parties see is derived from the name, the provider's issuer and the user's subject
-    /// there, exactly and case-sensitively. Renaming a provider, even only its casing, makes every
-    /// such user a new user at every relying party. A host that must rename one computes each
-    /// user's old and new subject with <see cref="ExternalSubject.Derive"/> and migrates between them.
-    /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="builder"/> or <paramref name="configure"/> is <see langword="null"/>.

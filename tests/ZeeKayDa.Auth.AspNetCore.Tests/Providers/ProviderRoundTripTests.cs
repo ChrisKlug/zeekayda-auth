@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Stores;
@@ -199,7 +200,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         resume.ShouldHaveReachedConsent("the promoted session moves the request on to consent");
         var session = (await ReadSessionAsync(client))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject),
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject),
             "the upstream subject is never used verbatim");
         session.GetProperty("name").GetString().Should().Be("Upstream User", "the provider's other claims are kept");
         session.GetProperty("sid").GetString().Should().NotBeNullOrEmpty();
@@ -772,7 +773,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         resume.ShouldHaveReachedConsent();
         (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString()
-            .Should().Be(ExternalSubject.Derive("hand", HandWrittenIssuer, HandWrittenSubject));
+            .Should().Be(ExternalSubject.Derive(HandWrittenIssuer, HandWrittenSubject));
     }
 
     [Fact]
@@ -915,7 +916,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         firstResume.ShouldHaveReachedConsent();
         secondResume.ShouldHaveReachedConsent();
-        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
     }
 
     [Fact]
