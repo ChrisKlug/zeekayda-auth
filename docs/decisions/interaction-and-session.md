@@ -100,11 +100,10 @@ else the error page with `NothingToContinue`. The destination is the registratio
 the binding never learns the client. A logout shows the signed-out page, or the error page if still signed in.
 A missing `zkd_i`, the one host-bug case, logs a warning; the rest log at information.
 
-**ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the
-host's pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted.
-Only the error, logout-confirmation and signed-out pages have unbranded framework fallbacks for a host that sets no path.
-Those, and every response a login, consent or logout page calls `GetRequestAsync`/`TryGetRequestAsync` from or a provider
-sign-in page `GetPendingPrincipalAsync`, are stamped `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `no-store`.
+**ZeeKayDa owns no interaction UI that needs a user model.** Login, consent and provider selection are the host's
+pages, with its own user store, branding and MFA — more host code than a shipped page, a cost accepted. Only the error,
+logout-confirmation and signed-out pages have unbranded fallbacks for a host that sets no path. Those, and every response a
+page calls `GetRequestAsync`/`TryGetRequestAsync`/`GetPendingPrincipalAsync` from, carry `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `no-store`.
 
 **Provider schemes exist only in the framework's scheme map, and what would make them visible to the host fails
 at startup.** `WithProviders` replays the scheme-map configurers the host's callback appended, records the
@@ -123,11 +122,10 @@ route is refused for the same reason: the middleware would claim the callback fi
 properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
 `zkd.external` records that mark at sign-in and refuses a sign-in without one; `/connect/resume` consumes the ticket first and
 refuses one naming another interaction or an unregistered provider. A handler that drops its properties fails loudly there and can
-complete nothing else. A failed callback for an interaction the browser carries returns the user to the login page that challenged,
-the interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one
-callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With
-no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
-never by message. An auto-promoted external principal's session subject is `ExternalSubject.Derive(issuer, subject)` — public, so a
+complete nothing else. A failed callback for an interaction the browser carries returns the user to the login page that challenged, the
+interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one callback-scoped
+`zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With no login page only a
+refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type never by message. An auto-promoted external principal's session subject is `ExternalSubject.Derive(issuer, subject)` — public, so a
 host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities,
 a rename changes nothing, and a subject without an issuer is refused. A host choosing other subjects does so in `OnProviderSignIn`.
 
