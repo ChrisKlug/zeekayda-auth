@@ -12,7 +12,8 @@ JWKS is in `signing-keys.md`; principles that apply beyond this part are in `pri
   signed; expiry is not checked, since a client sends the one it got at sign-in. If `client_id` is
   sent too, they must agree.
 - `post_logout_redirect_uri` is used only if it is registered for that client, exact match, or the
-  endpoint would be an open redirect. `state` is echoed, up to 2048 characters.
+  endpoint would be an open redirect, and never after a hint that failed: §4 forbids redirecting
+  after an error in the request. `state` is echoed, up to 2048 characters.
 - With no session, the user is signed out at once. Otherwise the user is **asked**, because any page
   can trigger a logout with a link, unless the hint is valid, the client set
   `SkipLogoutConfirmation`, and the hint names the user who is signed in.
