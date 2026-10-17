@@ -556,8 +556,8 @@ page fetch them; it does not expose the raw provider ticket or tokens.
 
 **Promotion never uses the provider's subject verbatim.** Upstream subjects are unique only within
 their issuer, so the session subject of an auto-promoted external principal is derived as
-base64url(SHA-256 over the length-prefixed triple of provider id, the subject claim's `Issuer`,
-and the upstream sub)): collision-resistant, with length prefixes leaving no separator to collide
+base64url(SHA-256 over the length-prefixed pair of the subject claim's `Issuer` and the upstream
+sub)): collision-resistant, with length prefixes leaving no separator to collide
 on; fixed-length, well inside the 255-character `sub` limit; stable for the life of the upstream
 account. The issuer is framework-visible for every handler: a JWT-validating handler stamps the
 validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which defaults to
@@ -565,11 +565,11 @@ the scheme name, and a hand-written handler sets it when it creates the claim. A
 validates several issuers therefore separates its users by issuer rather than by promise. A
 subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and promotion refuses it
 with a message saying so — a handler that constructs claims without an issuer is one line away
-from compliant. Two providers returning the same value cannot share a session or a `sub`. The
-provider id is in the hash because the scheme name is the registration's durable identity:
-re-registering the same name keeps every subject, which is what an operator rotating a secret or
-an endpoint wants, and what an operator moving the name to a *different* upstream must not do —
-that is a new provider and needs a new name. A host
+from compliant. Two issuers returning the same value cannot share a session or a `sub`. The
+registration name is not in the hash: the issuer already namespaces the subject, so renaming a
+registration changes no subject, and two registrations of one issuer share their users'
+identities. `ExternalSubject.Derive` is public, so a host can compute the default subject to link
+an account before first sign-in. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to,
 through that page's own service: `ProviderSignInInteraction.SignInAsync(params Claim[])` has the
 framework build the promoted principal — the derived subject, the provider's claims, plus what the

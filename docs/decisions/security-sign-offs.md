@@ -1321,7 +1321,9 @@ ran alongside.
   reaches the client only on the single-provider path; citations repointed at those successors.]
 - The session subject is derived from provider, issuer and upstream subject, and a subject without
   an issuer is refused. Closed — `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`,
-  `A_subject_claim_without_an_issuer_is_refused_at_promotion`.
+  `A_subject_claim_without_an_issuer_is_refused_at_promotion`. [Since #984 the registration name is no longer
+  part of the derivation — issuer and upstream subject only; the first test now proves that the OAuth default issuer, the scheme name,
+  separates two OAuth registrations.]
 - A parked principal is bound to its interaction, consumed on every exit, and handed to the host as
   a copy. Closed — `A_parked_principal_bound_to_another_interaction_is_refused`,
   `Automatic_promotion_consumes_a_parked_principal_bound_to_the_interaction`,
@@ -2425,6 +2427,16 @@ M1 audit finding (Medium, area 5) and the security agent's fix-round review (sig
 - The entry format and the plaintext tombstone (`zkd:code:t`) and interaction marker (`zkd:code:i`) are unchanged; the register's "a persistence breach discloses nothing redeemable" now holds for a
   writer as well as a reader. Purposes differ per store (distinct parent purpose and key prefix) and per row (hash), so no two rows share a protector.
 - **Not covered:** a writer who also holds the Data Protection key ring can re-seal anything; that is in-process access and outside the threat model.
+
+## 2026-10-17 — the external session subject is derived from the issuer and the upstream subject only (#984, code frozen at `2d2df35`)
+M1 audit finding (Low, area 2), the maintainer's reading of PR #1016, and the security agent's verification of the derivation change; no Copilot lens (quota). `f78543e`, `2d2df35` read by the security agent; the maintainer reads the PR.
+- `ExternalSubject.Derive(issuer, subject)` is public: `base64url(SHA-256(length-prefixed issuer, subject))`, both parts required, compared exactly. The registration name is no longer hashed, so a
+  provider rename changes no user's subject and a host can compute the default subject to link an account before first sign-in. Closed —
+  `Derive_is_the_same_under_two_registration_names_of_one_issuer`, `Derive_changes_when_any_part_changes`, `Derive_refuses_an_empty_part`, `Derive_separates_the_parts_by_length_so_boundaries_cannot_collide`.
+- The issuer is now the only namespace, so a subject claim carrying the default issuer is refused at promotion; every stock handler stamps one (OAuth: the scheme name, unique per registry; OIDC: `iss`). Closed —
+  `A_subject_claim_without_an_issuer_is_refused_at_promotion`, `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`.
+- The host chooses an external user's subject through `OnProviderSignIn` → `SignInWithReplacedAccountAsync`; there is no separate derivation seam (maintainer).
+- **Accepted residuals (maintainer):** two registrations of one issuer share identities. Two distinct upstreams collide only if the host stamps the same `ClaimsIssuer` string on both — operator error, no test.
 ## 2026-10-17 — a PFX bundle refuses an empty password and warns of weak or absent key encryption (#989, code frozen at `90d82b3`)
 M1 audit findings (two Lows, area 4), the security agent's fix-round review (sign-off, one Low fixed) and its verification of the fix diff; no Copilot lens (quota). `82c454f`, `1b7fb4f`, `90d82b3` read by the security agent; the maintainer reads the PR.
 - A `PasswordSource` returning `""` is `password_unavailable` for PFX as for PEM, before any decode, on listing and signing; this supersedes the #917 entry's "PFX keeps `\"\"`". Closed —
