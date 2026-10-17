@@ -21,12 +21,13 @@ marks every response `no-store`, reads the query (GET) or form (POST), and valid
 - **Valid:** an interaction starts.
 
 **Starting the interaction.** The SSO session is read, and the request needs a sign-in when there is
-none, the client sent `prompt=login`, or the session is older than `max_age`. The validated request
-is stored under a random id; from then on only that id travels, as `zkd_i`. A request too large to
-store is a local error, since echoing its `state` could make an unusable redirect. Then:
+none, the client sent `prompt=login`, or the session is older than `max_age`. A `prompt=none`
+request that needs a sign-in is answered `login_required` there, before anything is stored. Otherwise
+the validated request is stored under a random id; from then on only that id travels, as `zkd_i`. A
+request too large to store is a local error, since echoing its `state` could make an unusable
+redirect. Then:
 
 - signed in already: straight on to consent or a code;
-- `prompt=none`: `login_required`;
 - otherwise the host's login page, or the one external provider directly when there is no local
   login, or `server_error` when neither is configured.
 

@@ -202,6 +202,19 @@ class Service
 EOF
 assert_exit "sensitive placeholder with no suppression comment fails" 1 run_checker "${DIR}"
 
+DIR="$(case_dir case06_id_token_hint)"
+new_fixture "${DIR}"
+write_source "${DIR}" <<'EOF'
+class Service
+{
+    void M(object logger, string hint)
+    {
+        logger.LogInformation("Hint: {IdTokenHint}", hint);
+    }
+}
+EOF
+assert_exit "IdTokenHint placeholder with no suppression comment fails" 1 run_checker "${DIR}"
+
 DIR="$(case_dir case07)"
 new_fixture "${DIR}"
 write_source "${DIR}" <<'EOF'

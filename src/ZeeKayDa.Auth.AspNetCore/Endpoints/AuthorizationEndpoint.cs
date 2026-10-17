@@ -116,6 +116,16 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
         var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
         var needsAuthentication = _flow.NeedsAuthentication(request, session);
 
+        var loginRequired = needsAuthentication && request.Prompts.Contains(PromptValue.None);
+        if (loginRequired)
+        {
+            // OIDC Core §3.1.2.6. Answered before anything is stored: nothing would ever read it.
+            return RedirectToClient(
+                request,
+                AuthorizeRequestErrors.LoginRequired,
+                "The request specified prompt=none but no authenticated session is available.");
+        }
+
         var continuedSession = needsAuthentication ? null : session;
         var requestContext = _flow.CreateContext(request, continuedSession);
 
@@ -137,15 +147,6 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         if (!needsAuthentication)
             return await _outcomes.ContinueAsync(context, requestContext).ConfigureAwait(false);
-
-        if (request.Prompts.Contains(PromptValue.None))
-        {
-            // OIDC Core §3.1.2.6.
-            return await FailRequestAsync(context, requestContext, () => RedirectToClient(
-                request,
-                AuthorizeRequestErrors.LoginRequired,
-                "The request specified prompt=none but no authenticated session is available.")).ConfigureAwait(false);
-        }
 
         var interaction = _options.Value.AuthorizationEndpoint.Interaction;
         switch (LoginDispatch.Decide(interaction, _providers.Count))

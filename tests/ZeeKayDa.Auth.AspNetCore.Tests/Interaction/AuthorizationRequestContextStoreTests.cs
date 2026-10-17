@@ -73,9 +73,9 @@ public sealed class AuthorizationRequestContextStoreTests
     [Fact]
     public async Task Deleting_in_the_request_that_stored_it_removes_the_entry()
     {
-        // A request that stores an interaction and then ends it — prompt=none with no session, a
-        // configuration gap — has not yet sent the browser the cookie, so the secret it issued has
-        // to travel with the request for the entry to be removable rather than left to expire.
+        // A request that stores an interaction and then ends it — a configuration gap — has not yet
+        // sent the browser the cookie, so the secret it issued has to travel with the request for
+        // the entry to be removable rather than left to expire.
         var backing = new NeverEvictingStore();
         var (contexts, _, _) = Store(backing);
         var request = new DefaultHttpContext();
