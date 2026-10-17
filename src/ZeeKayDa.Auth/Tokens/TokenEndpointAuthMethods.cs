@@ -16,8 +16,10 @@ public static class TokenEndpointAuthMethods
 
     /// <summary>Client secret sent in the request body (<c>client_secret_post</c>).</summary>
     /// <remarks>
-    /// Enable only when required for compatibility; request bodies are more likely to appear
-    /// in logs than HTTP headers.
+    /// Always advertised in discovery, but a client can use it only when its
+    /// <c>IClient.AllowedTokenEndpointAuthMethods</c> lists it, which the default does not. Add it
+    /// to a client only when that client needs it: request bodies are more likely to appear in logs
+    /// than HTTP headers.
     /// </remarks>
     public const string ClientSecretPost = "client_secret_post";
 
