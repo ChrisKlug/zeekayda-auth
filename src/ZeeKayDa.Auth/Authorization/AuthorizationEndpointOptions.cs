@@ -7,14 +7,21 @@ namespace ZeeKayDa.Auth.Authorization;
 /// </summary>
 public sealed class AuthorizationEndpointOptions
 {
+    private string? _uri;
     private ICollection<CodeChallengeMethod>? _codeChallengeMethodsSupported = [CodeChallengeMethod.S256];
+    private TimeSpan _authorizationCodeLifetime = TimeSpan.FromSeconds(60);
+    private int _maxRequestContextBytes = 16 * 1024;
     private bool _frozen;
 
     /// <summary>
     /// Gets or sets an explicit override for the <c>authorization_endpoint</c> URI published in
     /// the discovery document. When <see langword="null"/>, the value is derived from the issuer.
     /// </summary>
-    public string? Uri { get; set; }
+    public string? Uri
+    {
+        get => _uri;
+        set => _uri = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Uri");
+    }
 
     /// <summary>
     /// Gets or sets the PKCE methods published as <c>code_challenge_methods_supported</c>.
@@ -34,7 +41,11 @@ public sealed class AuthorizationEndpointOptions
     /// Gets or sets the lifetime of an issued authorization code. Defaults to 60 seconds; must be
     /// positive and at most 10 minutes (RFC 9700 §2.1.1).
     /// </summary>
-    public TimeSpan AuthorizationCodeLifetime { get; set; } = TimeSpan.FromSeconds(60);
+    public TimeSpan AuthorizationCodeLifetime
+    {
+        get => _authorizationCodeLifetime;
+        set => _authorizationCodeLifetime = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime");
+    }
 
     /// <summary>
     /// Gets or sets the most bytes one accepted authorization request may occupy in the interaction
@@ -44,14 +55,18 @@ public sealed class AuthorizationEndpointOptions
     /// Bounds what an unauthenticated request can make the store hold. A typical request is a few
     /// hundred bytes; raise it only for clients that send large <c>state</c> values.
     /// </remarks>
-    public int MaxRequestContextBytes { get; set; } = 16 * 1024;
+    public int MaxRequestContextBytes
+    {
+        get => _maxRequestContextBytes;
+        set => _maxRequestContextBytes = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.MaxRequestContextBytes");
+    }
 
     /// <summary>
     /// Gets the paths of the host-owned interaction pages the authorization flow hands off to.
     /// </summary>
     public InteractionOptions Interaction { get; } = new();
 
-    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    /// <summary>Makes every collection read-only and refuses any later change.</summary>
     internal void Freeze()
     {
         if (_frozen)

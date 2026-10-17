@@ -274,6 +274,78 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         });
     }
 
+    // ── Scalars ──────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Setting_Issuer_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+
+        var act = () => options.Issuer = "https://attacker.example.com";
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
+        options.Issuer.Should().Be("https://auth.example.com");
+    }
+
+    [Fact]
+    public void Setting_AuthorizationCodeLifetime_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+
+        var act = () => options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromHours(1);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
+    }
+
+    [Fact]
+    public void Setting_AccessTokenLifetime_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+
+        var act = () => options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromDays(365);
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
+    }
+
+    [Fact]
+    public void Setting_any_scalar_on_a_frozen_group_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        var scalars = FrozenGroups(options)
+            .SelectMany(group => group.Value.GetType().GetProperties()
+                .Where(property => property.CanWrite && CollectionElementType(property.PropertyType) is null)
+                .Select(property => (Path: group.Path + property.Name, Owner: group.Value, Property: property)))
+            .ToList();
+
+        scalars.Select(scalar => scalar.Path).Should().BeEquivalentTo(
+            "Issuer",
+            "ClockSkewTolerance",
+            "AuthorizationEndpoint.Uri",
+            "AuthorizationEndpoint.AuthorizationCodeLifetime",
+            "AuthorizationEndpoint.MaxRequestContextBytes",
+            "TokenEndpoint.Uri",
+            "TokenEndpoint.RefreshTokenLifetime",
+            "TokenEndpoint.AbsoluteFamilyLifetime",
+            "TokenEndpoint.AccessTokenLifetime",
+            "TokenEndpoint.IdTokenLifetime",
+            "Development.AllowHttpLoopbackIssuer",
+            "Development.AllowHttpLoopbackCorsOrigins",
+            "Development.DisableExceptionSanitizing");
+        scalars.Should().AllSatisfy(scalar =>
+        {
+            var act = () => scalar.Property.SetValue(scalar.Owner, scalar.Property.GetValue(scalar.Owner));
+
+            act.Should().Throw<TargetInvocationException>(scalar.Path)
+                .WithInnerException<ZeeKayDaConfigurationException>()
+                .Which.AggregatedFailures.Should().ContainSingle(f =>
+                    f.Code == "configuration.options_frozen" &&
+                    f.Message.Contains($"AuthorizationServerOptions.{scalar.Path}", StringComparison.Ordinal));
+        });
+    }
+
     // ── Development switches ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -324,6 +396,15 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
         options.CorsOrigins.Should().Equal("HTTPS://APP.EXAMPLE.COM");
     }
+
+    private static IEnumerable<(string Path, object Value)> FrozenGroups(AuthorizationServerOptions options) =>
+    [
+        ("", options),
+        ("AuthorizationEndpoint.", options.AuthorizationEndpoint),
+        ("TokenEndpoint.", options.TokenEndpoint),
+        ("Response.", options.Response),
+        ("Development.", options.Development),
+    ];
 
     /// <summary>
     /// Every property of a generic collection type on the options and, recursively, on each option
