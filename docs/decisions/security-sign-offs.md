@@ -1723,7 +1723,7 @@ signed off with #688 and was not re-reviewed here.
   skips the question only for the signed-in user of an opted-out client. Closed —
   `A_post_logout_redirect_uri_the_client_did_not_register_is_not_used`,
   `A_hint_issued_to_another_client_than_the_one_named_is_ignored`,
-  A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked [renamed by #1032 to `A_valid_hint_for_a_user_not_signed_in_here_ends_nothing_and_asks_nothing`: a hint now ends only the account it names, and nothing when that user is not signed in here].
+  `A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked`.
 - Residual, accepted: the session is the cookie, so a sign-out revokes no token already issued;
   session-bound revocation is #104 — `A_valid_hint_from_a_client_that_skips_the_question_signs_out_at_once`.
 - Residual: the framework's own page answers 400 for every refusal alike, so the session check is

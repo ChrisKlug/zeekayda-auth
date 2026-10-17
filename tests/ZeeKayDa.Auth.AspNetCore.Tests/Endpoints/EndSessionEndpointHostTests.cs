@@ -193,16 +193,16 @@ public sealed class EndSessionEndpointHostTests
     }
 
     [Fact]
-    public async Task A_valid_hint_for_a_user_not_signed_in_here_ends_nothing_and_asks_nothing()
+    public async Task A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked()
     {
         var idToken = await SignInForIdTokenAsync(_client, TrustedApp, subject: "user-1");
         var otherBrowser = _host.NewFlowClient();
         await SignInAsync(otherBrowser, TrustedApp, subject: "user-2");
 
-        var answered = await EndSessionAsync(otherBrowser, new() { ["id_token_hint"] = idToken });
+        var asked = await EndSessionAsync(otherBrowser, new() { ["id_token_hint"] = idToken });
 
-        answered.StatusCode.Should().Be(HttpStatusCode.OK, "the hinted user is not signed in here, so the signed-out page answers");
-        (await HasSessionAsync(otherBrowser)).Should().BeTrue("a hint names the one account to end, never another");
+        Location(asked).Should().StartWith(ConfirmPath);
+        (await HasSessionAsync(otherBrowser)).Should().BeTrue();
     }
 
     [Fact]

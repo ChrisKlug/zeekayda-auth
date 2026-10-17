@@ -26,10 +26,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// </para>
 /// <para>
 /// A sign-out ends one account: the one a valid <c>id_token_hint</c> names, or else the client's
-/// own — the one last signed in to or picked for it. The user is signed out without being asked only when there is
-/// nothing to end — no account at all, or none for the hinted user — or when a valid hint names a
-/// signed-in account and its client opted out of the question with <c>SkipLogoutConfirmation</c>.
-/// Everything else is confirmed first (§2), and the confirmation can end every account instead.
+/// own — the one last signed in to or picked for it. The user is signed out without being asked
+/// only when there is no account to end, or when a valid hint names a signed-in account and its
+/// client opted out of the question with <c>SkipLogoutConfirmation</c>. Everything else — a hint
+/// for a user not signed in here included — is confirmed first (§2), and the confirmation can end
+/// every account instead.
 /// </para>
 /// </remarks>
 internal sealed class EndSessionEndpoint(
@@ -86,14 +87,12 @@ internal sealed class EndSessionEndpoint(
         if (sessions.IsEmpty)
             return await responses.EndAllAsync(context, sessions, redirect).ConfigureAwait(false);
 
-        // The hinted user, or the client's own account; a hint for a user not signed in here ends nothing.
-        var account = hint is not null ? sessions.Find(hint.Subject) : sessions.DefaultFor(client?.ClientId);
-        if (account is null)
-            return responses.Signed(redirect);
+        var hinted = hint is null ? null : sessions.Find(hint.Subject);
+        if (hinted is not null && MayEndWithoutAsking(client))
+            return await responses.EndAccountAsync(context, sessions, hinted, redirect).ConfigureAwait(false);
 
-        if (MayEndWithoutAsking(client, hint))
-            return await responses.EndAccountAsync(context, sessions, account, redirect).ConfigureAwait(false);
-
+        // A hint for a user not signed in here is asked about as no hint is (§2): the client's own account.
+        var account = hinted ?? sessions.DefaultFor(client?.ClientId)!;
         return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, account.SessionId, account.Subject))
             .ConfigureAwait(false);
     }
@@ -194,11 +193,10 @@ internal sealed class EndSessionEndpoint(
     }
 
     /// <summary>
-    /// A valid hint, which named the account to end, from a client that opted out of the question.
+    /// Whether the client opted out of the question, for a valid hint that named a signed-in account.
     /// The hint's client is the one resolved, so the opt-out is that client's own.
     /// </summary>
-    private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint) =>
-        hint is not null && client is { SkipLogoutConfirmation: true };
+    private static bool MayEndWithoutAsking(IClient? client) => client is { SkipLogoutConfirmation: true };
 
     /// <summary>Whether the framework's confirmation form was posted with its "every account" button.</summary>
     private static async ValueTask<bool> AsksForEveryAccountAsync(HttpContext context) =>

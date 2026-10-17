@@ -67,9 +67,10 @@ subject cannot be sent upstream; the completion check stays the safety net, refu
 anyone else with `login_required`.
 
 **Logout ends one account unless the page ends all.** A valid `id_token_hint` ends only the account it
-names, and ends nothing when that user is not signed in here; without one, the logout page is asked
-about the client's own account and gets every account as `LogoutRequest.SignedInAccounts`, and
-`SignOutAllAsync` ends them all — the framework's own confirmation page offers it too. Any sign-out ends every interaction the browser has in flight.
+names. Without one, or with one for a user not signed in here (RP-Initiated Logout §2 requires asking),
+the logout page is asked about the client's own account and gets every account as
+`LogoutRequest.SignedInAccounts`; `SignOutAllAsync` ends them all, and the framework's own
+confirmation page offers it too. Any sign-out ends every interaction the browser has in flight.
 Which relying parties are told is unbuilt.
 
 ## Tried, didn't work

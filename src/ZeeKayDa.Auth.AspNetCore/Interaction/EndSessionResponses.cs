@@ -54,7 +54,7 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
     }
 
     /// <summary>The answer once nothing is left to end: back at the client when it named a redirect, else the signed-out page.</summary>
-    public IResult Signed(PostLogoutRedirect? redirect)
+    private IResult Signed(PostLogoutRedirect? redirect)
     {
         if (redirect is null)
             return SignedOut();

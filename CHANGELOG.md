@@ -33,9 +33,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `AccountSelectionInteraction`, when an account it holds could answer without signing in again;
   otherwise the login page. Without a picker the answer stays `account_selection_required`. The
   provider challenge hook is told the hinted user as `ProviderChallengeContext.RequiredSubject`.
-- **End-session ends one account** (#1032). A valid `id_token_hint` ends only the account it names,
-  and nothing when that user is not signed in here. Without one the logout page is asked about the
-  client's own account, gets every account as `LogoutRequest.SignedInAccounts`, and can end them all
+- **End-session ends one account** (#1032). A valid `id_token_hint` ends only the account it names.
+  Without one, or for a user not signed in here, the logout page is asked about the client's own
+  account, gets every account as `LogoutRequest.SignedInAccounts`, and can end them all
   with the new `LogoutInteraction.SignOutAllAsync`.
 
 - **The SSO session cookie holds only the framework's own claims, and a sign-in subject is limited
