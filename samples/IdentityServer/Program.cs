@@ -12,6 +12,10 @@ var auth = builder.Services.AddZeeKayDaAuth(builder.Configuration.GetSection("Id
     // The login and consent pages sit at the default /login and /consent. Each page completes its
     // step through an interaction service; none of them handles a return URL, a cookie or a scheme.
     options.AuthorizationEndpoint.Interaction.ErrorPath = "/error";
+
+    // The account picker, for a client that sends prompt=select_account. The framework sends the
+    // browser there only when an account it is signed in to could answer.
+    options.AuthorizationEndpoint.Interaction.SelectAccountPath = "/select-account";
     options.EndSessionEndpoint.LogoutPath = "/logout";
     options.EndSessionEndpoint.SignedOutPath = "/signed-out";
 });

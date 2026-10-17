@@ -80,11 +80,19 @@ internal sealed class EndSessionEndpoint(
         var (hint, hintRejected, client) = await ResolveClientAsync(parameters, hints, clients, context.RequestAborted).ConfigureAwait(false);
         var redirect = hintRejected ? null : RedirectFor(client, parameters);
 
-        var session = await _session.ReadAsync(context).ConfigureAwait(false);
-        if (session is null || MayEndWithoutAsking(client, hint, session))
-            return await responses.SignOutAsync(context, session, redirect).ConfigureAwait(false);
+        var sessions = await _session.ReadAsync(context).ConfigureAwait(false);
+        if (sessions.IsEmpty)
+            return await responses.EndAllAsync(context, sessions, redirect).ConfigureAwait(false);
 
-        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId, session.Subject))
+        // The hinted user, or the client's own account; a hint for a user not signed in here ends nothing.
+        var account = hint is not null ? sessions.Find(hint.Subject) : sessions.DefaultFor(client?.ClientId);
+        if (account is null)
+            return responses.Signed(redirect);
+
+        if (MayEndWithoutAsking(client, hint))
+            return await responses.EndAccountAsync(context, sessions, account, redirect).ConfigureAwait(false);
+
+        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, account.SessionId, account.Subject))
             .ConfigureAwait(false);
     }
 
@@ -180,19 +188,12 @@ internal sealed class EndSessionEndpoint(
     }
 
     /// <summary>
-    /// A valid hint for the user signed in to this browser, from a client that opted out of the
-    /// question. The hint's client is the one resolved, so the opt-out is that client's own.
+    /// A valid hint, which named the account to end, from a client that opted out of the question.
+    /// The hint's client is the one resolved, so the opt-out is that client's own.
     /// </summary>
-    private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint, SsoSessionState session) =>
-        hint is not null
-        && client is { SkipLogoutConfirmation: true }
-        && string.Equals(hint.Subject, session.Subject, StringComparison.Ordinal);
+    private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint) =>
+        hint is not null && client is { SkipLogoutConfirmation: true };
 
-    /// <summary>
-    /// The request's parameters: the query string for a GET, the form body for a POST. A POST that
-    /// is not form-encoded carries nothing this endpoint can read (§2), and is treated as carrying
-    /// nothing.
-    /// </summary>
     private static async ValueTask<Dictionary<string, StringValues>> ReadParametersAsync(HttpContext context)
     {
         var request = context.Request;

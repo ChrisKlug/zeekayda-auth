@@ -37,7 +37,8 @@ internal sealed class ProviderChallengeHook(
         ProviderRegistration registration,
         AuthenticationProperties properties)
     {
-        var session = await flow.ReadSessionAsync(context).ConfigureAwait(false);
+        var sessions = await flow.ReadSessionsAsync(context).ConfigureAwait(false);
+        var session = sessions.Select(requestContext.ClientId, requestContext.RequiredSubject, requestContext.LoginHint);
         var reauthenticationRequired = flow.RequiresReauthentication(requestContext.Prompts, requestContext.MaxAge, session);
 
         var hook = options.Value.OnProviderChallenge;
@@ -49,6 +50,7 @@ internal sealed class ProviderChallengeHook(
             requestContext.Prompts.ToFrozenSet(),
             requestContext.MaxAge,
             requestContext.LoginHint,
+            requestContext.RequiredSubject,
             reauthenticationRequired,
             properties);
 

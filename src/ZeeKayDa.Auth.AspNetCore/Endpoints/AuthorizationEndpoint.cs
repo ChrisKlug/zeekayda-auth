@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
-using ZeeKayDa.Auth.AspNetCore.Providers;
 using ZeeKayDa.Auth.Authorization;
 using ZeeKayDa.Auth.Logging;
 
@@ -28,20 +27,17 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
     private readonly IOptions<AuthorizationServerOptions> _options;
     private readonly AuthorizationFlow _flow;
     private readonly InteractionOutcomes _outcomes;
-    private readonly ProviderRegistry _providers;
     private readonly SanitizingLogger<AuthorizationEndpoint> _logger;
 
     public AuthorizationEndpoint(
         IOptions<AuthorizationServerOptions> options,
         AuthorizationFlow flow,
         InteractionOutcomes outcomes,
-        ProviderRegistry providers,
         SanitizingLogger<AuthorizationEndpoint> logger)
     {
         _options = options;
         _flow = flow;
         _outcomes = outcomes;
-        _providers = providers;
         _logger = logger;
     }
 
@@ -98,22 +94,17 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     /// <summary>
     /// Stores the interaction context the rest of the flow reads, then hands off: to the host's
-    /// login page when the request must be authenticated, or straight on when an SSO session
-    /// already answers for the user.
+    /// login page when the request must be authenticated, to the account picker when the client asks
+    /// for a choice, or straight on when an account the browser holds answers for the user.
     /// </summary>
     private async Task<IResult> BeginInteractionAsync(HttpContext context, ValidatedAuthorizeRequest request)
     {
-        // There is no account picker, and a server that cannot obtain a selection must say so
-        // (OIDC Core §3.1.2.1) rather than continue as whichever account holds the session.
-        if (request.Prompts.Contains(PromptValue.SelectAccount))
-        {
-            return RedirectToClient(
-                request,
-                AuthorizeRequestErrors.AccountSelectionRequired,
-                "The request specified prompt=select_account, but this server cannot prompt the user to select an account.");
-        }
+        var sessions = await _flow.ReadSessionsAsync(context).ConfigureAwait(false);
 
-        var session = await _flow.ReadSessionAsync(context).ConfigureAwait(false);
+        if (request.Prompts.Contains(PromptValue.SelectAccount))
+            return await BeginAccountSelectionAsync(context, request, sessions).ConfigureAwait(false);
+
+        var session = sessions.Select(request.Client.ClientId, request.RequiredSubject, request.LoginHint);
         var needsAuthentication = _flow.NeedsAuthentication(request, session);
 
         var loginRequired = needsAuthentication && request.Prompts.Contains(PromptValue.None);
@@ -128,15 +119,53 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
         var continuedSession = needsAuthentication ? null : session;
         var requestContext = _flow.CreateContext(request, continuedSession);
+        if (await StoreAsync(context, request, requestContext).ConfigureAwait(false) is { } failure)
+            return failure;
 
+        if (continuedSession is null)
+            return await _outcomes.AuthenticateAsync(context, requestContext).ConfigureAwait(false);
+
+        await _flow.ChooseAsync(context, sessions, continuedSession, request.Client.ClientId).ConfigureAwait(false);
+        return await _outcomes.ContinueAsync(context, requestContext).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <c>prompt=select_account</c> (OIDC Core §3.1.2.1): the host's account picker when an account
+    /// the browser holds could answer without signing in again, the login page when none could, and
+    /// <c>account_selection_required</c> when the host has no picker (§3.1.2.6).
+    /// </summary>
+    private async Task<IResult> BeginAccountSelectionAsync(HttpContext context, ValidatedAuthorizeRequest request, SsoSessionList sessions)
+    {
+        if (_options.Value.AuthorizationEndpoint.Interaction.SelectAccountPath is not { } selectAccountPath)
+        {
+            return RedirectToClient(
+                request,
+                AuthorizeRequestErrors.AccountSelectionRequired,
+                "The request specified prompt=select_account, but this server has no account picker.");
+        }
+
+        var requestContext = _flow.CreateContext(request, session: null);
+        if (await StoreAsync(context, request, requestContext).ConfigureAwait(false) is { } failure)
+            return failure;
+
+        var selectable = _flow.SelectableAccounts(request.Prompts, request.MaxAge, request.RequiredSubject, sessions);
+        if (selectable.Count == 0)
+            return await _outcomes.AuthenticateAsync(context, requestContext).ConfigureAwait(false);
+
+        return Results.Redirect(InteractionHandoff.BuildRedirectUrl(selectAccountPath, requestContext.Id));
+    }
+
+    /// <summary>Persists the new request; the answer to send instead when it cannot be, else <see langword="null"/>.</summary>
+    private async Task<IResult?> StoreAsync(HttpContext context, ValidatedAuthorizeRequest request, AuthorizationRequestContext requestContext)
+    {
         try
         {
-            if (!await _flow.TryPersistAsync(context, requestContext).ConfigureAwait(false))
-            {
-                // Rendered, not redirected: echoing an oversized `state` byte for byte (RFC 6749 §4.1.2.1)
-                // makes a Location that the client's server may or may not accept.
-                return RenderLocalError(context, AuthorizeRequestErrors.InvalidRequest, InteractionOutcomes.TooLarge);
-            }
+            if (await _flow.TryPersistAsync(context, requestContext).ConfigureAwait(false))
+                return null;
+
+            // Rendered, not redirected: echoing an oversized `state` byte for byte (RFC 6749 §4.1.2.1)
+            // makes a Location that the client's server may or may not accept.
+            return RenderLocalError(context, AuthorizeRequestErrors.InvalidRequest, InteractionOutcomes.TooLarge);
         }
         catch (ZeeKayDaStoreException ex)
         {
@@ -144,40 +173,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
             return RedirectToClient(request, AuthorizeRequestErrors.ServerError, InteractionOutcomes.CouldNotStoreRequest);
         }
-
-        if (!needsAuthentication)
-            return await _outcomes.ContinueAsync(context, requestContext).ConfigureAwait(false);
-
-        var interaction = _options.Value.AuthorizationEndpoint.Interaction;
-        switch (LoginDispatch.Decide(interaction, _providers.Count))
-        {
-            case LoginDispatchRule.LoginPage when interaction.LoginPath is { } loginPath:
-                return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
-
-            case LoginDispatchRule.SingleProvider:
-                // The only provider: no host page is needed to choose one.
-                await _outcomes.ChallengeAsync(context, requestContext, _providers.Registrations[0]).ConfigureAwait(false);
-                return Results.Empty;
-
-            default:
-                // No login page and no single provider. Startup warned; the client's developer sees this.
-                return await FailRequestAsync(context, requestContext, () => RedirectToClient(
-                    request,
-                    AuthorizeRequestErrors.ServerError,
-                    "The authorization server is not configured to authenticate users.")).ConfigureAwait(false);
-        }
     }
-
-    /// <summary>
-    /// Discards the interaction just written before answering an error: a request that ends here
-    /// must not leave its interaction alive for a later sign-in to pick up.
-    /// </summary>
-    private async Task<IResult> FailRequestAsync(HttpContext context, AuthorizationRequestContext requestContext, Func<IResult> respond)
-    {
-        await _flow.ClearAsync(context, requestContext.Id).ConfigureAwait(false);
-        return respond();
-    }
-
     /// <summary>
     /// Extracts the parameter multi-map from the request's OIDC serialization — the query string
     /// for GET, the form body for POST. Returns <see langword="null"/> for a POST without a form

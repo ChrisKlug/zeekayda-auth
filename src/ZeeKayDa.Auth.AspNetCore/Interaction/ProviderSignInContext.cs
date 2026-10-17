@@ -16,9 +16,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 public sealed class ProviderSignInContext
 {
-    private readonly Func<PathString, Task> _redirect;
+    private readonly Func<PathString, AccountPlacement, Task> _redirect;
     private readonly Func<Task> _deny;
     private int _completed;
+    private string? _loginIdentifier;
 
     internal ProviderSignInContext(
         ExternalIdentity identity,
@@ -27,7 +28,7 @@ public sealed class ProviderSignInContext
         ClientInformation client,
         IReadOnlyList<string> effectiveScopes,
         CancellationToken requestAborted,
-        Func<PathString, Task> redirect,
+        Func<PathString, AccountPlacement, Task> redirect,
         Func<Task> deny)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -84,7 +85,7 @@ public sealed class ProviderSignInContext
         }
 
         EnsureFirstTerminalCall();
-        return _redirect(path);
+        return _redirect(path, Placement);
     }
 
     /// <summary>
@@ -146,6 +147,52 @@ public sealed class ProviderSignInContext
     /// </summary>
     public CancellationToken RequestAborted { get; }
 
+    /// <summary>
+    /// Gets or sets whether the user is signed in beside the accounts this browser already holds,
+    /// instead of replacing them. Defaults to <see langword="false"/>: the previous user is signed
+    /// out, the safe choice on a shared computer.
+    /// </summary>
+    /// <remarks>
+    /// The host decides here for every external sign-in, whether the framework signs the user in
+    /// when the handler returns or a page of the host's finishes it after
+    /// <see cref="RedirectToAsync"/>: what is set when that is called goes with the parked principal.
+    /// It works as <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string)"/>
+    /// does for a local sign-in, cap included.
+    /// </remarks>
+    public bool AddAccount { get; set; }
+
+    /// <summary>
+    /// Gets or sets what the user is known by, such as the email address the provider returned:
+    /// shown on the account picker, and matched, ignoring case, against a client's <c>login_hint</c>.
+    /// Defaults to <see langword="null"/>, which uses the session subject — a derived subject, 43
+    /// characters no user recognises.
+    /// </summary>
+    /// <remarks>
+    /// Held to the rule a <c>login_hint</c> is: at most 256 characters, not blank, with no control,
+    /// line-separator or invisible formatting character. A linking page that signs in a local account
+    /// in the external user's place can give that account's own identifier instead, through
+    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// options.OnProviderSignIn = context =>
+    /// {
+    ///     context.AddAccount = true;
+    ///     context.LoginIdentifier = context.Principal.FindFirstValue(ClaimTypes.Email);
+    ///     return Task.CompletedTask;
+    /// };
+    /// </code>
+    /// </example>
+    /// <exception cref="ArgumentException">The value breaks the rule above.</exception>
+    public string? LoginIdentifier
+    {
+        get => _loginIdentifier;
+        set => _loginIdentifier = SignInArguments.LoginIdentifier(value);
+    }
+
     /// <summary>Whether a terminal method has been called.</summary>
     internal bool Completed => Volatile.Read(ref _completed) != 0;
+
+    /// <summary>How the host chose to place the account among those the browser holds.</summary>
+    internal AccountPlacement Placement => new(LoginIdentifier, AddAccount);
 }

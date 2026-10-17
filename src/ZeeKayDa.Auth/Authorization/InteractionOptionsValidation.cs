@@ -16,5 +16,20 @@ internal static class InteractionOptionsValidation
             .Concat(InteractionPath.Validate(
                 interaction.ConsentPath,
                 "AuthorizationEndpoint.Interaction.ConsentPath",
-                "configuration.authorization_endpoint.interaction.consent_path.unsafe"));
+                "configuration.authorization_endpoint.interaction.consent_path.unsafe"))
+            .Concat(InteractionPath.Validate(
+                interaction.SelectAccountPath,
+                "AuthorizationEndpoint.Interaction.SelectAccountPath",
+                "configuration.authorization_endpoint.interaction.select_account_path.unsafe"))
+            .Concat(ValidateMaxSignedInAccounts(interaction));
+
+    private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateMaxSignedInAccounts(InteractionOptions interaction)
+    {
+        if (interaction.MaxSignedInAccounts < 1)
+        {
+            yield return new(
+                "configuration.authorization_endpoint.interaction.max_signed_in_accounts.not_positive",
+                "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.MaxSignedInAccounts must be at least 1.");
+        }
+    }
 }

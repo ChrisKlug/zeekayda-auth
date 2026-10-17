@@ -78,13 +78,14 @@ public sealed class LogoutInteraction
         var request = await ResolveAddressedAsync(context, cancellationToken).ConfigureAwait(false);
 
         // At render too: the request carries the subject, which must not reach a user signed in since.
-        await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
+        var (sessions, _) = await RequireAskedSessionAsync(context, request, cancellationToken).ConfigureAwait(false);
+        var accounts = sessions.Accounts.Select(SignedInAccount.Of).ToArray();
 
         if (request.ClientId is null)
-            return new LogoutRequest(client: null, request.Subject);
+            return new LogoutRequest(client: null, request.Subject) { SignedInAccounts = accounts };
 
         var client = await FindClientAsync(context, request.ClientId, cancellationToken).ConfigureAwait(false);
-        return new LogoutRequest(new ClientInformation(request.ClientId, client?.DisplayName), request.Subject);
+        return new LogoutRequest(new ClientInformation(request.ClientId, client?.DisplayName), request.Subject) { SignedInAccounts = accounts };
     }
 
     /// <summary>
@@ -116,9 +117,10 @@ public sealed class LogoutInteraction
     }
 
     /// <summary>
-    /// Signs the user out and sends them on: to the client's registered post-logout redirect URI
-    /// when the sign-out named one, carrying the client's <c>state</c>, and to the signed-out page
-    /// otherwise. This is the Sign out button.
+    /// Signs out the account the sign-out is for, <see cref="LogoutRequest.Subject"/>, and sends the
+    /// user on: to the client's registered post-logout redirect URI when the sign-out named one,
+    /// carrying the client's <c>state</c>, and to the signed-out page otherwise. This is the Sign out
+    /// button.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -129,9 +131,10 @@ public sealed class LogoutInteraction
     /// read: wired to the <c>GET</c> that renders the page, it would sign the user out on arrival.
     /// </para>
     /// <para>
-    /// The SSO session ends, and so does every authorization request this browser has in flight. The
-    /// redirect URI is checked against the client's registration as it stands now, so one the
-    /// operator removed while the page was open is not used.
+    /// That account's session ends, and so does every authorization request this browser has in
+    /// flight. Any other account the browser is signed in to stays signed in;
+    /// <see cref="SignOutAllAsync"/> ends them too. The redirect URI is checked against the client's
+    /// registration as it stands now, so one the operator removed while the page was open is not used.
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaStoreException">
@@ -144,13 +147,41 @@ public sealed class LogoutInteraction
     public async Task SignOutAsync()
     {
         var context = RequireStateChangingRequest();
-        await _nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context)).ConfigureAwait(false);
+        await _nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context, allAccounts: false)).ConfigureAwait(false);
     }
 
-    private async Task ConfirmAsync(HttpContext context)
+    /// <summary>
+    /// Signs out every account this browser is signed in to, and sends the user on as
+    /// <see cref="SignOutAsync"/> does. This is the "Sign out of all accounts" button, for a shared
+    /// computer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Terminal</strong>, on the terms <see cref="SignOutAsync"/> states, and refused on the
+    /// same terms: the sign-out must still be for an account the browser holds.
+    /// </para>
+    /// <para>
+    /// The session cookie is removed, and every authorization request this browser has in flight
+    /// ends. <see cref="LogoutRequest.SignedInAccounts"/> lists who that signs out.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ZeeKayDaStoreException">
+    /// The interaction store could not be read. Fail-closed: nobody was signed out.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
+    /// resolved outside one.
+    /// </exception>
+    public async Task SignOutAllAsync()
+    {
+        var context = RequireStateChangingRequest();
+        await _nothingToContinue.SignOutStepAsync(context, () => ConfirmAsync(context, allAccounts: true)).ConfigureAwait(false);
+    }
+
+    private async Task ConfirmAsync(HttpContext context, bool allAccounts)
     {
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
-        var session = await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
+        var (sessions, account) = await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
         var client = request.ClientId is null
             ? null
@@ -158,7 +189,9 @@ public sealed class LogoutInteraction
         var redirect = PostLogoutRedirect.For(client, request.PostLogoutRedirectUri, request.State);
 
         await _requests.DeleteAsync(context, request.Id, context.RequestAborted).ConfigureAwait(false);
-        var result = await _responses.SignOutAsync(context, session, redirect).ConfigureAwait(false);
+        var result = allAccounts
+            ? await _responses.EndAllAsync(context, sessions, redirect).ConfigureAwait(false)
+            : await _responses.EndAccountAsync(context, sessions, account, redirect).ConfigureAwait(false);
 
         context.Response.Headers.CacheControl = "no-store";
         await result.ExecuteAsync(context).ConfigureAwait(false);
@@ -194,17 +227,21 @@ public sealed class LogoutInteraction
     }
 
     /// <summary>
-    /// Refuses, and discards the sign-out, unless the browser still holds the session it was started
-    /// for: an answer about a session since ended is not an instruction about its replacement.
+    /// Refuses, and discards the sign-out, unless the browser still holds the account session it was
+    /// started for: an answer about a session since ended is not an instruction about its replacement.
     /// </summary>
-    private async ValueTask<SsoSessionState> RequireAskedSessionAsync(
+    private async ValueTask<(SsoSessionList Sessions, SsoSessionState Account)> RequireAskedSessionAsync(
         HttpContext context,
         LogoutRequestContext request,
         CancellationToken cancellationToken)
     {
-        var session = await _session.ReadAsync(context).ConfigureAwait(false);
-        if (session is not null && string.Equals(session.SessionId, request.SsoSessionId, StringComparison.Ordinal))
-            return session;
+        var sessions = await _session.ReadAsync(context).ConfigureAwait(false);
+        var account = sessions.Accounts.FirstOrDefault(held =>
+            string.Equals(held.SessionId, request.SsoSessionId, StringComparison.Ordinal)
+            && string.Equals(held.Subject, request.Subject, StringComparison.Ordinal));
+
+        if (account is not null)
+            return (sessions, account);
 
         await _requests.DeleteAsync(context, request.Id, cancellationToken).ConfigureAwait(false);
 
@@ -234,7 +271,7 @@ public sealed class LogoutInteraction
         {
             throw new InvalidOperationException(
                 "A sign-out must come from a POST — the logout form's submission — not from the request " +
-                "that renders the page. Wire SignOutAsync to the form's post handler.");
+                "that renders the page. Wire SignOutAsync and SignOutAllAsync to the form's post handlers.");
         }
 
         return context;

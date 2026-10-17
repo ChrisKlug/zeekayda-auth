@@ -64,7 +64,7 @@ internal sealed class NothingToContinue(
 
     /// <summary>The signed-out page for a browser that holds no session, and the error page for one that does.</summary>
     private async ValueTask<IResult> SignedOutOrErrorAsync(HttpContext context) =>
-        await session.ReadAsync(context).ConfigureAwait(false) is null
+        (await session.ReadAsync(context).ConfigureAwait(false)).IsEmpty
             ? answers.EndSession.SignedOut()
             : answers.Authorization.Local(context, AuthorizationErrorKind.NothingToContinue, ErrorCode, NoSignOutToContinue);
 

@@ -428,7 +428,8 @@ internal sealed partial class AuthorizeRequestValidator(
         Description = LocalErrorDescription,
     };
 
-    private static bool IsRefusedInLoginHint(Rune rune) =>
+    /// <summary>A character a <c>login_hint</c>, or a login identifier matched against one, may not hold.</summary>
+    internal static bool IsRefusedInLoginHint(Rune rune) =>
         Rune.GetUnicodeCategory(rune) switch
         {
             UnicodeCategory.Control or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,

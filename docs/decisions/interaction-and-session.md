@@ -4,7 +4,8 @@
 provider registration through `WithProviders`, the login dispatch rules, the external round
 trip and in-flow consent exist; remembered consent grants and home realm discovery do not.
 The authorize endpoint's protocol rules are in
-`authorization-and-interaction.md`; interface shapes for the unbuilt part are in
+`authorization-and-interaction.md`; what the SSO session cookie holds, and which of its accounts
+answers, is `signed-in-accounts.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
 
 ## Decisions in force
@@ -54,16 +55,6 @@ echoes no value would have no enforcement — which is why the providers' `DenyA
 parameterless. The denial never becomes a redirect primitive either: the destination is the registered URI
 from the decrypted interaction context, so an expired context has no destination and the request has nothing
 to continue.
-
-**The SSO session identifier is framework-minted, unguessable and stable for the life of the
-session — and is not the cookie value, which is regenerated on every promotion so that
-session-fixation resistance is a stated property rather than an accident of what `SignInAsync` does
-today.** The identifier is carried as a reserved claim the host neither supplies nor sees and kept
-across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only); a fresh sign-in
-or a changed subject mints a new one. None of those properties may be traded away: one derived from
-the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
-events could never key a denylist. The cookie holds exactly what its one reader takes — `sub`, `zkd:sid`, `zkd:auth_time`, `zkd:amr`: pages pass a subject and methods, never claims, and promotion copies no provider claim, since tokens and userinfo get theirs from `IClaimsProvider` and anything more is unread personal data that can overflow the `Cookie` header.
-A host's subject is 1–255 characters, each 0x21–0x7E (OIDC Core §2 caps `sub` at 255 ASCII), refused at the call: a subject is compared exactly, so a stray space would make two users.
 
 **Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
 registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the

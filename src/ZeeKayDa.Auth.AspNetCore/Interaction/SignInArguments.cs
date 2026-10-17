@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using ZeeKayDa.Auth.Authorization;
+
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
@@ -20,5 +23,30 @@ internal static class SignInArguments
                 nameof(authenticationMethods));
 
         return methods;
+    }
+
+    /// <summary>
+    /// The login identifier, or <see langword="null"/> when none was given. A client's
+    /// <c>login_hint</c> is matched against it, so it is held to the hint's own rule.
+    /// </summary>
+    public static string? LoginIdentifier(
+        string? loginIdentifier,
+        [CallerArgumentExpression(nameof(loginIdentifier))] string? paramName = null)
+    {
+        if (loginIdentifier is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(loginIdentifier)
+            || loginIdentifier.Length > AuthorizeRequestValidator.MaxLoginHintLength
+            || loginIdentifier.EnumerateRunes().Any(AuthorizeRequestValidator.IsRefusedInLoginHint))
+        {
+            throw new ArgumentException(
+                "The login identifier must be 1–256 characters, not blank, with no control, line-separator "
+                + "or invisible formatting character: the rule a client's login_hint is held to, since one "
+                + "is matched against the other. Pass null to use the subject.",
+                paramName);
+        }
+
+        return loginIdentifier;
     }
 }

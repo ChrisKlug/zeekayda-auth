@@ -142,15 +142,46 @@ internal sealed class InteractionOutcomes(
             return;
         }
 
-        var state = await flow.PromoteAsync(context, signIn.Subject, signIn.AuthenticationMethods).ConfigureAwait(false);
+        var state = await flow.PromoteAsync(context, signIn, requestContext.ClientId).ConfigureAwait(false);
 
+        await ContinueAuthenticatedAsync(context, requestContext, state, signIn.ProviderScheme).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Terminal. Continues the request as <paramref name="account"/>, an account this browser already
+    /// holds, picked on the account picker: no credentials, and the account becomes the client's.
+    /// </summary>
+    public async Task CompleteSelectionAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        SsoSessionList sessions,
+        SsoSessionState account)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+        ArgumentNullException.ThrowIfNull(sessions);
+        ArgumentNullException.ThrowIfNull(account);
+
+        context.Response.Headers.CacheControl = "no-store";
+
+        await flow.ChooseAsync(context, sessions, account, requestContext.ClientId).ConfigureAwait(false);
+        await ContinueAuthenticatedAsync(context, requestContext, account, providerScheme: null).ConfigureAwait(false);
+    }
+
+    /// <summary>Records the account on the interaction and continues the flow, writing the result.</summary>
+    private async Task ContinueAuthenticatedAsync(
+        HttpContext context,
+        AuthorizationRequestContext requestContext,
+        SsoSessionState state,
+        string? providerScheme)
+    {
         var authenticated = requestContext with
         {
             SsoSessionId = state.SessionId,
             Subject = state.Subject,
             AuthTime = state.AuthTime,
             Amr = state.Amr,
-            ProviderScheme = signIn.ProviderScheme,
+            ProviderScheme = providerScheme,
 
             // Decided by whoever signed in earlier on this interaction, not by this user.
             GrantedScopes = null,
@@ -259,6 +290,37 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
+    /// Sends a stored request that must be authenticated to whatever authenticates it: the login
+    /// page, or the one provider when there is no page to choose on. Not terminal, except that a
+    /// provider challenge writes the response itself and returns <see cref="Results.Empty"/>.
+    /// </summary>
+    public async Task<IResult> AuthenticateAsync(HttpContext context, AuthorizationRequestContext requestContext)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        var interaction = options.Value.AuthorizationEndpoint.Interaction;
+        switch (LoginDispatch.Decide(interaction, providers.Count))
+        {
+            case LoginDispatchRule.LoginPage when interaction.LoginPath is { } loginPath:
+                return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
+
+            case LoginDispatchRule.SingleProvider:
+                // The only provider: no host page is needed to choose one.
+                await ChallengeAsync(context, requestContext, providers.Registrations[0]).ConfigureAwait(false);
+                return Results.Empty;
+
+            default:
+                // No login page and no single provider. Startup warned; the client's developer sees this.
+                return await ClientErrorAsync(
+                    context,
+                    requestContext,
+                    AuthorizeRequestErrors.ServerError,
+                    "The authorization server is not configured to authenticate users.").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// Terminal. Challenges one provider, returning to <c>/connect/resume</c>, with the interaction
     /// and provider stamped into properties the returned ticket carries whatever the handler does —
     /// or, when <see cref="ProviderOptions.OnProviderChallenge"/> does not let it proceed, answers
@@ -355,13 +417,17 @@ internal sealed class InteractionOutcomes(
         return Results.Redirect(InteractionHandoff.BuildRedirectUrl(loginPath, requestContext.Id));
     }
 
-    /// <summary>Terminal. Parks <paramref name="principal"/> and sends the user to the caller-validated <paramref name="path"/>.</summary>
+    /// <summary>
+    /// Terminal. Parks <paramref name="principal"/>, with the host's <paramref name="placement"/> for
+    /// it, and sends the user to the caller-validated <paramref name="path"/>.
+    /// </summary>
     public async Task ParkAsync(
         HttpContext context,
         AuthorizationRequestContext requestContext,
         ProviderRegistration registration,
         ClaimsPrincipal principal,
-        PathString path)
+        PathString path,
+        AccountPlacement placement)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
@@ -370,9 +436,18 @@ internal sealed class InteractionOutcomes(
 
         context.Response.Headers.CacheControl = "no-store";
 
-        await flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name), requestContext).ConfigureAwait(false);
+        await flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name, placement), requestContext).ConfigureAwait(false);
         await WriteAsync(context, Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
             .ConfigureAwait(false);
+    }
+
+    /// <summary>Terminal. Writes and commits <paramref name="result"/>, for a page step that ends with one.</summary>
+    public static async Task EndWithAsync(HttpContext context, IResult result)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(result);
+
+        await WriteAsync(context, result).ConfigureAwait(false);
     }
 
     private static async Task WriteAsync(HttpContext context, IResult result)
@@ -389,5 +464,13 @@ internal sealed class InteractionOutcomes(
     }
 }
 
-/// <summary>What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local sign-in.</summary>
-internal sealed record SignIn(SessionSubject Subject, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);
+/// <summary>
+/// What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local
+/// sign-in. <c>AddAccount</c> keeps the accounts the browser holds instead of replacing them.
+/// </summary>
+internal sealed record SignIn(
+    SessionSubject Subject,
+    IReadOnlyList<string> AuthenticationMethods,
+    string? ProviderScheme,
+    string? LoginIdentifier = null,
+    bool AddAccount = false);

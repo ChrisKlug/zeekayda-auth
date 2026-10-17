@@ -1,0 +1,25 @@
+@page "/select-account"
+@model SelectAccountModel
+@{
+    ViewData["Title"] = "Choose an account";
+}
+@if (Model.SelectionRequest is not { } request)
+{
+    <h1>Nothing to choose</h1>
+    <p>This request has expired or was already answered. Return to the application and sign in again.</p>
+    return;
+}
+<h1>Choose an account</h1>
+
+<p>to continue to <strong>@(request.Client.DisplayName ?? request.Client.ClientId)</strong></p>
+
+@* No action attribute: the form posts back to this URL, which keeps the zkd_i parameter the
+   framework added. *@
+<form method="post">
+    @foreach (var account in request.Accounts)
+    {
+        <button class="account" type="submit" name="account" value="@account.Subject">@account.LoginIdentifier</button>
+    }
+    <button id="select-another" type="submit" name="action" value="another">Use another account</button>
+    <button id="select-cancel" type="submit" name="action" value="cancel">Cancel</button>
+</form>

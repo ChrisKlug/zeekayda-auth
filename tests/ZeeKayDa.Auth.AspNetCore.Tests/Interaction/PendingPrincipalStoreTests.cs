@@ -47,7 +47,7 @@ public sealed class PendingPrincipalStoreTests
         var principal = ProviderPrincipal();
         principal.Identities.First().AddClaim(new Claim(ReservedClaims.Prefix + "sid", "forged"));
 
-        await pending.ParkAsync(bound, new PendingTicket(principal, Provider), ContextAt(Now), None);
+        await pending.ParkAsync(bound, new PendingTicket(principal, Provider, AccountPlacement.Replace), ContextAt(Now), None);
 
         (await pending.ReadAsync(RequestCarrying(bound), InteractionId, None))!.Principal.Claims
             .Should().NotContain(claim => claim.Type.StartsWith(ReservedClaims.Prefix));
@@ -410,7 +410,7 @@ public sealed class PendingPrincipalStoreTests
         written.Response.Headers.SetCookie.Single()!.Split(';')[0].Split('=')[1].Split('.')[1];
 
     /// <summary>What resume parks: the provider's principal, and the provider that returned it.</summary>
-    private static PendingTicket Ticket(string subject = "upstream-42") => new(ProviderPrincipal(subject), Provider);
+    private static PendingTicket Ticket(string subject = "upstream-42") => new(ProviderPrincipal(subject), Provider, AccountPlacement.Replace);
 
     /// <summary>What a provider returns: two identities, each with its authentication type and issuer.</summary>
     private static ClaimsPrincipal ProviderPrincipal(string subject = "upstream-42")

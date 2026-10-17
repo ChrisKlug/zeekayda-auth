@@ -19,6 +19,14 @@
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" />
 
+    @if (Model.SignedInAccounts.Count > 0)
+    {
+        <label>
+            <input type="checkbox" name="keepOthersSignedIn" value="true" />
+            Keep @string.Join(", ", Model.SignedInAccounts.Select(account => account.LoginIdentifier)) signed in
+        </label>
+    }
+
     <button id="login-submit" class="login-submit" type="submit" name="action" value="login">Sign in</button>
     <button id="login-cancel" type="submit" name="action" value="cancel">Cancel</button>
 </form>

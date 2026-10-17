@@ -11,15 +11,35 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// How a sign-out ends, and the framework's own pages for a host that built none. A redirect goes
 /// only to a registered post-logout redirect URI, unlogged.
 /// </summary>
-internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> options)
+internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> options, SsoSession session)
 {
-    /// <summary>Ends the SSO session and this browser's interactions, then answers at the client or a signed-out page.</summary>
-    /// <param name="context">The request signing out.</param>
-    /// <param name="session">The session this request carries, or <see langword="null"/> when it carries none that reads.</param>
-    /// <param name="redirect">Where to send the user back to the client, or <see langword="null"/>.</param>
-    public async Task<IResult> SignOutAsync(HttpContext context, SsoSessionState? session, PostLogoutRedirect? redirect)
+    /// <summary>
+    /// Signs out one account, and ends this browser's interactions, then answers at the client or a
+    /// signed-out page. The other accounts stay signed in; the cookie goes with the last one.
+    /// </summary>
+    public async Task<IResult> EndAccountAsync(HttpContext context, SsoSessionList sessions, SsoSessionState account, PostLogoutRedirect? redirect)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(sessions);
+        ArgumentNullException.ThrowIfNull(account);
+
+        await session.EndAsync(context, sessions, account.SessionId).ConfigureAwait(false);
+        InteractionBindingCookie.DeleteAll(context);
+
+        return Signed(redirect);
+    }
+
+    /// <summary>
+    /// Signs out every account, and ends this browser's interactions, then answers at the client or
+    /// a signed-out page.
+    /// </summary>
+    /// <param name="context">The request signing out.</param>
+    /// <param name="sessions">The accounts this request carries; empty when it carries no cookie that reads.</param>
+    /// <param name="redirect">Where to send the user back to the client, or <see langword="null"/>.</param>
+    public async Task<IResult> EndAllAsync(HttpContext context, SsoSessionList sessions, PostLogoutRedirect? redirect)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(sessions);
 
         // A cross-site post carries no Lax session cookie, and must not end the session unasked (§2).
         // Through the handler, so the deletion carries the attributes the browser needs to drop it.
@@ -27,17 +47,21 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
             await context.SignOutAsync(ZeeKayDaCookies.Session).ConfigureAwait(false);
 
         // An unreadable cookie is no session, so the interactions it would end are not its own.
-        if (session is not null)
+        if (!sessions.IsEmpty)
             InteractionBindingCookie.DeleteAll(context);
 
-        if (redirect is not null)
-        {
-            return new UnloggedRedirect(redirect.State is null
-                ? redirect.Uri
-                : QueryHelpers.AddQueryString(redirect.Uri, "state", redirect.State));
-        }
+        return Signed(redirect);
+    }
 
-        return SignedOut();
+    /// <summary>The answer once nothing is left to end: back at the client when it named a redirect, else the signed-out page.</summary>
+    public IResult Signed(PostLogoutRedirect? redirect)
+    {
+        if (redirect is null)
+            return SignedOut();
+
+        return new UnloggedRedirect(redirect.State is null
+            ? redirect.Uri
+            : QueryHelpers.AddQueryString(redirect.Uri, "state", redirect.State));
     }
 
     /// <summary>The host's signed-out page, or the framework's own. Signs nothing out.</summary>

@@ -20,20 +20,22 @@ internal sealed class AuthorizationFlow(
 {
     private readonly SsoSession _session = session;
 
-    /// <summary>Reads the established SSO session, or <see langword="null"/> when there is none.</summary>
-    public Task<SsoSessionState?> ReadSessionAsync(HttpContext context) => _session.ReadAsync(context);
+    /// <summary>Reads the accounts this browser is signed in to.</summary>
+    public Task<SsoSessionList> ReadSessionsAsync(HttpContext context) => _session.ReadAsync(context);
 
-    /// <summary>Establishes the SSO session for an authenticated subject.</summary>
-    public Task<SsoSessionState> PromoteAsync(
-        HttpContext context,
-        SessionSubject subject,
-        IReadOnlyList<string> authenticationMethods) =>
-        _session.PromoteAsync(context, subject, authenticationMethods);
+    /// <summary>Signs an authenticated user in, as the account <paramref name="clientId"/> is answered for.</summary>
+    public Task<SsoSessionState> PromoteAsync(HttpContext context, SignIn signIn, string clientId) =>
+        _session.PromoteAsync(context, signIn, clientId);
+
+    /// <summary>Makes a held account the one <paramref name="clientId"/> is answered for.</summary>
+    public Task ChooseAsync(HttpContext context, SsoSessionList sessions, SsoSessionState account, string clientId) =>
+        _session.ChooseAsync(context, sessions, account, clientId);
 
     /// <summary>
-    /// Whether the request must be authenticated before it can continue: no session at all, a
-    /// session for another user than the <c>id_token_hint</c> names, a client asking for
-    /// re-authentication with <c>prompt=login</c>, or a session older than the requested <c>max_age</c>.
+    /// Whether the request must be authenticated before it can continue: no account answers it
+    /// (<see cref="SsoSessionList.Select"/>), the account is another user than the
+    /// <c>id_token_hint</c> names, the client asks for re-authentication with <c>prompt=login</c>, or
+    /// the account authenticated longer ago than the requested <c>max_age</c>.
     /// </summary>
     public bool NeedsAuthentication(ValidatedAuthorizeRequest request, SsoSessionState? session)
     {
@@ -64,6 +66,25 @@ internal sealed class AuthorizationFlow(
             return true;
 
         return maxAge is { } limit && (session is null || IsOlderThan(session, limit));
+    }
+
+    /// <summary>
+    /// The held accounts the account picker may offer for a request: each one it would accept without
+    /// signing in again — the user the <c>id_token_hint</c> names, if any, within any <c>max_age</c>,
+    /// and none under <c>prompt=login</c>.
+    /// </summary>
+    public IReadOnlyList<SsoSessionState> SelectableAccounts(
+        IReadOnlySet<PromptValue> prompts,
+        TimeSpan? maxAge,
+        string? requiredSubject,
+        SsoSessionList sessions)
+    {
+        ArgumentNullException.ThrowIfNull(prompts);
+        ArgumentNullException.ThrowIfNull(sessions);
+
+        return sessions.Accounts
+            .Where(account => IsRequiredSubject(requiredSubject, account.Subject) && !RequiresReauthentication(prompts, maxAge, account))
+            .ToArray();
     }
 
     /// <summary>The context for a freshly validated request, carrying the session it continues on, if any.</summary>
@@ -98,7 +119,7 @@ internal sealed class AuthorizationFlow(
     }
 
     /// <summary>
-    /// Whether the session this browser holds, by identifier and subject, is the one that
+    /// Whether this browser still holds the account, by session identifier and subject, that
     /// authenticated the request. Ordinal, not fixed-time: both sides are framework-encrypted state.
     /// </summary>
     public async Task<bool> IsAuthenticatedByCurrentSessionAsync(HttpContext context, AuthorizationRequestContext requestContext)
@@ -109,11 +130,11 @@ internal sealed class AuthorizationFlow(
         if (requestContext.SsoSessionId is null)
             return false;
 
-        var session = await ReadSessionAsync(context).ConfigureAwait(false);
+        var sessions = await ReadSessionsAsync(context).ConfigureAwait(false);
 
-        return session is not null
-            && string.Equals(session.SessionId, requestContext.SsoSessionId, StringComparison.Ordinal)
-            && string.Equals(session.Subject, requestContext.Subject, StringComparison.Ordinal);
+        return sessions.Accounts.Any(account =>
+            string.Equals(account.SessionId, requestContext.SsoSessionId, StringComparison.Ordinal)
+            && string.Equals(account.Subject, requestContext.Subject, StringComparison.Ordinal));
     }
 
     /// <summary>
