@@ -18,11 +18,22 @@ public sealed class LogoutModel(UserStore users, LogoutInteraction logout) : Pag
         HasRequest = true;
         ClientName = request.Client is { } client ? client.DisplayName ?? client.ClientId : null;
         Username = users.FindBySubject(request.Subject)?.Username ?? request.Subject;
+        OtherAccounts = request.SignedInAccounts.Count - 1;
     }
 
     // Terminal: the framework ends the session and redirects to the client, or to the signed-out
-    // page — including for a form submitted twice, where the user is already signed out.
-    public async Task OnPostAsync() => await logout.SignOutAsync();
+    // page — including for a form submitted twice, where the user is already signed out. "All"
+    // signs out every account this browser holds, for a shared computer.
+    public async Task OnPostAsync(string? scope)
+    {
+        if (scope == "all")
+            await logout.SignOutAllAsync();
+        else
+            await logout.SignOutAsync();
+    }
+
+    /// <summary>How many other accounts this browser is signed in to, which "Sign out of all accounts" also ends.</summary>
+    public int OtherAccounts { get; private set; }
 
     /// <summary>Whether there is a sign-out to confirm; it may have expired or been answered already.</summary>
     public bool HasRequest { get; private set; }

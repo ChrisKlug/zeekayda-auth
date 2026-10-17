@@ -92,7 +92,7 @@ internal sealed class ResumeEndpoint(
             await flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
-            path => outcomes.ParkAsync(context, requestContext, registration, principal, path),
+            (path, placement) => outcomes.ParkAsync(context, requestContext, new PendingTicket(principal, registration.Name, placement), path),
             () => outcomes.DenyAsync(context, requestContext, Denial.RefusedAfterProvider));
 
         SessionSubject promoted;
@@ -113,20 +113,17 @@ internal sealed class ResumeEndpoint(
             return Fail(context, registration, ex);
         }
 
-        await SignInPromotedAsync(context, requestContext, registration, promoted).ConfigureAwait(false);
+        // No amr: the provider told the framework nothing about how the user proved who they are.
+        var promotion = new SignIn(promoted, AuthenticationMethods: [], registration.Name, signIn.Placement);
+        await SignInPromotedAsync(context, requestContext, promotion).ConfigureAwait(false);
         return Results.Empty;
     }
 
-    /// <summary>
-    /// Signs in the promoted subject, superseding a principal parked by an earlier return. No <c>amr</c>:
-    /// the provider told the framework nothing about how the user proved who they are.
-    /// </summary>
-    private async Task SignInPromotedAsync(
-        HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration, SessionSubject promoted)
+    /// <summary>Signs in the promoted subject, superseding a principal parked by an earlier return.</summary>
+    private async Task SignInPromotedAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn promotion)
     {
         await flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
-            .ConfigureAwait(false);
+        await outcomes.CompleteSignInAsync(context, requestContext, promotion).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -8,6 +8,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **One browser can be signed in to several accounts, and a request is answered only by the account
+  it names** (#1032). `zkd.session` holds a list of accounts, each with its own session identifier,
+  authentication time, methods and optional login identifier. An `id_token_hint` or `login_hint`
+  selects the matching account; a hint matching no account here sends the user to sign in, and
+  `prompt=none` gets `login_required`, so a client that named one user never silently gets another.
+  This replaces #965's "refuse a session for another user" with "select that user's account". A
+  request naming no one is answered by the account last signed in to or picked for that client, else
+  the most recently signed in; a silent answer never writes the cookie, so a background refresh
+  cannot undo a sign-out. `max_age` and `prompt=login` are judged against the selected account. An
+  account lives for the cookie lifetime from its own last sign-in; rewriting the cookie for another
+  account never extends it.
+- **Signing in replaces the accounts held unless the page asks to add** (#1032).
+  `LoginInteraction.SignInAsync` keeps today's behaviour, signing every other account out — the safe
+  default on a shared computer. The new `AddAccountAsync` keeps them, up to
+  `AuthorizationEndpoint.Interaction.MaxSignedInAccounts` (default 5, at most 20), past which the least recently
+  used account is signed out. Both take an optional `loginIdentifier`, held to the `login_hint` rule,
+  which the account picker shows and a `login_hint` is matched against; without one the subject
+  stands in. External sign-ins decide in `OnProviderSignIn` through `ProviderSignInContext.AddAccount`
+  and `.LoginIdentifier`, carried to the linking page, where `SignInWithReplacedAccountAsync`'s new
+  optional `loginIdentifier` wins.
+- **`prompt=select_account` is served by a host account picker** (#1032). A host that sets
+  `AuthorizationEndpoint.Interaction.SelectAccountPath` gets the browser there, through the new
+  `AccountSelectionInteraction`, when an account it holds could answer without signing in again;
+  otherwise the login page. Without a picker the answer stays `account_selection_required`. The
+  provider challenge hook is told the hinted user as `ProviderChallengeContext.RequiredSubject`.
+- **End-session ends one account** (#1032). A valid `id_token_hint` ends only the account it names.
+  Without one, or for a user not signed in here, the logout page is asked about the client's own
+  account, gets every account as `LogoutRequest.SignedInAccounts`, and can end them all
+  with the new `LogoutInteraction.SignOutAllAsync`.
+
 - **The SSO session cookie holds only the framework's own claims, and a sign-in subject is limited
   to printable ASCII** (#974). `zkd.session` now carries exactly `sub`, `zkd:sid`, `zkd:auth_time`
   and `zkd:amr`: automatic promotion of an external sign-in no longer copies the provider's claims

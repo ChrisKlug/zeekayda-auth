@@ -113,14 +113,14 @@ client authentication.
 **The end-session endpoint refuses nothing and asks by default.** GET and form POST alike; a
 parameter that fails to validate is ignored, so a bad request lands the user on a confirmation or
 signed-out page, never an error, and an `id_token_hint` that fails also drops the post-logout
-redirect (RP-Initiated Logout §4: no redirection after an error in the request). The user is asked unless there is no session to end, or a valid hint names the signed-in
-user and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST
-without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
+redirect (RP-Initiated Logout §4: no redirection after an error in the request). It ends one account
+(`signed-in-accounts.md`), and asks unless there is nothing to end, or a valid hint names a signed-in
+account and its client set `SkipLogoutConfirmation` (§2: asking is a SHOULD with a hint, a MUST without). `post_logout_redirect_uri` is honoured only on an exact match against the registration of
 the client the request resolves to — the hint's, else `client_id`'s — echoing `state`, and a
 `state` over 2048 characters drops the redirect rather than truncating what the client must match.
 A pending confirmation is an interaction like any other, `zkd_i` plus a binding cookie, which is
-its CSRF protection; it records the session it would end and is refused once the browser holds
-another, so a page left open across a re-authentication ends nothing. A request that presented no
+its CSRF protection; it records the account session it would end and is refused once the browser
+no longer holds it, so a page left open across a sign-out ends nothing. A request that presented no
 session cookie has none deleted, and one without a readable session leaves the browser's other
 interactions alone — a cross-site form post carries no `Lax` cookie, and answering one with a
 deletion would end a session unasked. There is no cancel call: a sign-out has no error response.

@@ -43,6 +43,10 @@ ZeeKayDa.Auth.Authorization.InteractionOptions.ErrorPath.set -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.InteractionOptions() -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.get -> string?
 ZeeKayDa.Auth.Authorization.InteractionOptions.LoginPath.set -> void
+ZeeKayDa.Auth.Authorization.InteractionOptions.MaxSignedInAccounts.get -> int
+ZeeKayDa.Auth.Authorization.InteractionOptions.MaxSignedInAccounts.set -> void
+ZeeKayDa.Auth.Authorization.InteractionOptions.SelectAccountPath.get -> string?
+ZeeKayDa.Auth.Authorization.InteractionOptions.SelectAccountPath.set -> void
 ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.get -> bool
 ZeeKayDa.Auth.Authorization.InteractionOptions.SupportsLocalSignIn.set -> void
 ZeeKayDa.Auth.Authorization.PkceChallenge

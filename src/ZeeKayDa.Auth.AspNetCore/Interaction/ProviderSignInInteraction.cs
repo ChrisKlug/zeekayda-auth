@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// A page that collects what the provider did not supply keeps it in the host's own store, then
 /// calls <see cref="SignInAsync"/>: the session is for the derived subject, never the upstream one.
 /// A page that links the external identity to a local account calls
-/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string})"/>.
+/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>.
 /// </para>
 /// <para>
 /// <strong>Terminal methods</strong> — every one but <see cref="GetPendingPrincipalAsync"/> — write
@@ -122,7 +122,9 @@ public sealed class ProviderSignInInteraction
     /// would establish: for the derived subject, holding none of the provider's claims. Anything the
     /// page collected belongs in the host's own store, where <c>IClaimsProvider</c> finds it for
     /// tokens and userinfo. No <c>amr</c> is reported: the framework was told nothing about how the
-    /// user proved who they are at the provider.
+    /// user proved who they are at the provider. The account replaces or joins those the browser
+    /// holds, with the login identifier, as <c>OnProviderSignIn</c> set on
+    /// <see cref="ProviderSignInContext.AddAccount"/> and <see cref="ProviderSignInContext.LoginIdentifier"/>.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
     /// The parked principal's provider is no longer registered.
@@ -151,10 +153,11 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
 
-        await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], taken.Provider))
-            .ConfigureAwait(false);
+        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement);
+        await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
+#pragma warning disable RS0026 // An optional login identifier on the one- and many-method overloads; nothing is shipped to stay compatible with.
     /// <summary>
     /// Establishes the SSO session for <paramref name="subject"/>, a local account, in place of
     /// the parked principal, and continues the authorization request that led here.
@@ -168,6 +171,10 @@ public sealed class ProviderSignInInteraction
     /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
     /// a method the registry does not name. A sign-in that used several takes the overload with a
     /// list.
+    /// </param>
+    /// <param name="loginIdentifier">
+    /// What the local account signs in with, on the terms
+    /// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/> states.
     /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
@@ -184,17 +191,18 @@ public sealed class ProviderSignInInteraction
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="subject"/> is null.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or
-    /// <paramref name="authenticationMethod"/> is null or blank.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space,
+    /// <paramref name="authenticationMethod"/> is null or blank, or <paramref name="loginIdentifier"/>
+    /// breaks the rule a <c>login_hint</c> is held to.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod)
+    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, string? loginIdentifier = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return SignInWithReplacedAccountAsync(subject, [authenticationMethod]);
+        return SignInWithReplacedAccountAsync(subject, [authenticationMethod], loginIdentifier);
     }
 
     /// <summary>
@@ -210,12 +218,21 @@ public sealed class ProviderSignInInteraction
     /// <see cref="AuthenticationMethods"/> for the registered values, or pass your own string for
     /// a method the registry does not name. An empty list omits the claim.
     /// </param>
+    /// <param name="loginIdentifier">
+    /// What the local account signs in with, such as its username: shown on the account picker, and
+    /// matched against a client's <c>login_hint</c>, as for
+    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string)"/>. It wins over
+    /// <see cref="ProviderSignInContext.LoginIdentifier"/>, which describes the external identity;
+    /// <see langword="null"/> keeps that one, or the subject when the handler set none.
+    /// </param>
     /// <remarks>
     /// Terminal (see the class remarks). This is account linking: the page decided the external
     /// identity belongs to one of the host's own accounts, and nothing the provider returned is
     /// carried into the session. The upstream subject is refused as <paramref name="subject"/>: an
     /// external sign-in's session subject is never the upstream one verbatim. The arguments are
-    /// copied when the call is made, so what was validated is what is signed in.
+    /// copied when the call is made, so what was validated is what is signed in. The account replaces
+    /// or joins those the browser holds as <c>OnProviderSignIn</c> set on
+    /// <see cref="ProviderSignInContext.AddAccount"/>.
     /// <para>
     /// Find the local account by <see cref="PendingPrincipal.Identity"/>, never by an unverified
     /// email: see <see cref="ExternalIdentity"/>.
@@ -235,22 +252,26 @@ public sealed class ProviderSignInInteraction
     /// <paramref name="subject"/> or <paramref name="authenticationMethods"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, or an entry
-    /// in <paramref name="authenticationMethods"/> is null or blank.
+    /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space, an entry
+    /// in <paramref name="authenticationMethods"/> is null or blank, or <paramref name="loginIdentifier"/>
+    /// breaks the rule a <c>login_hint</c> is held to.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods)
+    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null)
     {
         var methods = SignInArguments.Methods(authenticationMethods);
         var replacement = SessionSubject.From(subject);
+        var identifier = SignInArguments.LoginIdentifier(loginIdentifier);
 
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods)).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods, identifier))
+            .ConfigureAwait(false);
     }
+#pragma warning restore RS0026
 
-    private async Task SignInAsReplacementAsync(HttpContext context, SessionSubject replacement, string[] methods)
+    private async Task SignInAsReplacementAsync(HttpContext context, SessionSubject replacement, string[] methods, string? loginIdentifier)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
@@ -258,8 +279,9 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         RequireReplaceable(taken, replacement);
 
-        await _services.Outcomes.CompleteSignInAsync(context, requestContext, new SignIn(replacement, methods, taken.Provider))
-            .ConfigureAwait(false);
+        var placement = taken.Placement with { LoginIdentifier = loginIdentifier ?? taken.Placement.LoginIdentifier };
+        var signIn = new SignIn(replacement, methods, taken.Provider, placement);
+        await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
     /// <summary>

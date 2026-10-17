@@ -454,6 +454,125 @@ public sealed class IdTokenHintHostFixture : FlowHostFixture
 }
 
 /// <summary>
+/// The host the multi-account tests share: the clients and pages of <see cref="MultiAccountHost"/>,
+/// an account picker, and a logout page of the host's own.
+/// </summary>
+public sealed class MultiAccountHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options => MultiAccountHost.ConfigureOptions(options, withPicker: true),
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                MultiAccountHost.AddClients(builder);
+            },
+            mapEndpoints: MultiAccountHost.MapHostPages);
+}
+
+/// <summary>
+/// The same host as <see cref="MultiAccountHostFixture"/> with no logout page of its own, so the
+/// framework's confirmation page answers a sign-out.
+/// </summary>
+public sealed class MultiAccountFrameworkLogoutHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options => MultiAccountHost.ConfigureOptions(options, withPicker: true, withLogoutPage: false),
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                MultiAccountHost.AddClients(builder);
+            },
+            mapEndpoints: MultiAccountHost.MapHostPages);
+}
+
+/// <summary>
+/// The same host as <see cref="MultiAccountHostFixture"/> with no account picker configured, for the
+/// answer <c>prompt=select_account</c> gets from a server that has none.
+/// </summary>
+public sealed class MultiAccountNoPickerHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options => MultiAccountHost.ConfigureOptions(options, withPicker: false),
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                MultiAccountHost.AddClients(builder);
+            },
+            mapEndpoints: MultiAccountHost.MapHostPages);
+}
+
+/// <summary>
+/// The host of <see cref="MultiAccountHostFixture"/> with one <c>acme</c> provider, whose
+/// <see cref="OnProviderSignIn"/> and <see cref="OnProviderChallenge"/> hooks forward to whatever the
+/// current test set. It runs on the real clock, as a provider round trip must.
+/// </summary>
+public sealed class MultiAccountProviderHostFixture : FlowHostFixture
+{
+    /// <summary>What OnProviderSignIn does for the current test. Each test sets this while arranging.</summary>
+    public Func<ProviderSignInContext, Task>? OnProviderSignIn { get; set; }
+
+    /// <summary>What OnProviderChallenge does for the current test. Unset, the provider is challenged and a demanded re-authentication is forwarded.</summary>
+    public Func<ProviderChallengeContext, ProviderChallengeOutcome>? OnProviderChallenge { get; set; }
+
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options => MultiAccountHost.ConfigureOptions(options, withPicker: true),
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder, fakeClock: false);
+                MultiAccountHost.AddClients(builder);
+                builder.WithProviders(
+                    auth => auth.AddOAuth("acme", "Acme", ProviderTestHost.ConfigureAcme),
+                    options =>
+                    {
+                        options.OnProviderSignIn = context => OnProviderSignIn?.Invoke(context) ?? Task.CompletedTask;
+                        options.OnProviderChallenge = context => OnProviderChallenge?.Invoke(context)
+                            ?? (context.ReauthenticationRequired ? ProviderChallengeOutcome.Reauthenticating : ProviderChallengeOutcome.Proceed);
+                    });
+            },
+            mapEndpoints: MultiAccountHost.MapHostPages);
+
+    /// <summary>Clears both hooks, so a test that sets none does not inherit the previous test's.</summary>
+    public override void Reset()
+    {
+        base.Reset();
+        OnProviderSignIn = null;
+        OnProviderChallenge = null;
+    }
+}
+
+/// <summary>
 /// The host shared by <see cref="ConsentInteractionTests"/>: the default issuer, the consenting and
 /// trusted clients that class registers, and the login and consent pages it maps.
 /// </summary>

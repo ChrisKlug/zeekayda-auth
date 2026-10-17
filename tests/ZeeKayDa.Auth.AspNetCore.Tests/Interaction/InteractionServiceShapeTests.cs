@@ -13,6 +13,7 @@ public sealed class InteractionServiceShapeTests
         typeof(ErrorInteraction),
         typeof(LogoutInteraction),
         typeof(ProviderSignInInteraction),
+        typeof(AccountSelectionInteraction),
     ];
 
     [Theory]

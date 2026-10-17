@@ -3,10 +3,12 @@ Microsoft.AspNetCore.Builder.ZeeKayDaAuthEndpointRouteBuilderExtensions
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutInteraction.SignOutAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LogoutInteraction.SignOutAllAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutInteraction.TryGetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation?
 ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.Subject.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.LogoutRequest.SignedInAccounts.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount!>!
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderAuthenticatorExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderProviderExtensions
 Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthServiceCollectionExtensions
@@ -49,6 +51,15 @@ ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Kind.init -> void
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind.NothingToContinue = 1 -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
 ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind.RequestRejected = 0 -> ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorKind
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction.DenyAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionRequest!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction.SelectAsync(string! subject) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction.TryGetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionRequest?>!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionInteraction.UseAnotherAccountAsync() -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionRequest
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionRequest.Accounts.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount!>!
+ZeeKayDa.Auth.AspNetCore.Interaction.AccountSelectionRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation!
 ZeeKayDa.Auth.AspNetCore.Interaction.ErrorInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ErrorInteraction.GetErrorAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation
@@ -58,14 +69,14 @@ const ZeeKayDa.Auth.AspNetCore.ZeeKayDaSchemes.External = "zkd.external" -> stri
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.ChallengeAsync(string! provider) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.DenyAsync() -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, string! authenticationMethod) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, string! authenticationMethod, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.SignInAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.DenyAsync() -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.GetPendingPrincipalAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.PendingPrincipal?>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInAsync() -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, string! authenticationMethod) -> System.Threading.Tasks.Task!
-ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, string! authenticationMethod, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInInteraction.SignInWithReplacedAccountAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity.Issuer.get -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalIdentity.Subject.get -> string!
@@ -89,6 +100,10 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Principal.get -> Syst
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RedirectToAsync(Microsoft.AspNetCore.Http.PathString path) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.RequestAborted.get -> System.Threading.CancellationToken
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.AddAccount.get -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.AddAccount.set -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.LoginIdentifier.get -> string?
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.LoginIdentifier.set -> void
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.ToString() -> string!
@@ -124,6 +139,8 @@ Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientConfigurationE
 static Microsoft.Extensions.DependencyInjection.ZeeKayDaAuthBuilderClientConfigurationExtensions.AddInMemoryClients<TBuilder>(this TBuilder! builder, Microsoft.Extensions.Configuration.IConfiguration! section) -> TBuilder!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.GetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.TryGetRequestAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest?>!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.AddAccountAsync(string! subject, System.Collections.Generic.IEnumerable<string!>! authenticationMethods, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginInteraction.AddAccountAsync(string! subject, string! authenticationMethod, string? loginIdentifier = null) -> System.Threading.Tasks.Task!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.Client.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ClientInformation!
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.LocalLoginEnabled.get -> bool
@@ -138,6 +155,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderReturnOutcome.Failed = 1 -> ZeeKayD
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.LoginHint.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.ReauthenticationRequired.get -> bool
 ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.RequiredSubject.get -> string?
+ZeeKayDa.Auth.AspNetCore.Interaction.LoginRequest.SignedInAccounts.get -> System.Collections.Generic.IReadOnlyList<ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount!>!
 ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject
 static ZeeKayDa.Auth.AspNetCore.Interaction.ExternalSubject.Derive(string! issuer, string! subject) -> string!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext
@@ -147,9 +165,13 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Prompts.get -> Sys
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Properties.get -> Microsoft.AspNetCore.Authentication.AuthenticationProperties!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.Provider.get -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderDescriptor!
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.ReauthenticationRequired.get -> bool
+ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext.RequiredSubject.get -> string?
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderChallenge.get -> System.Func<ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeContext!, ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!>?
 ZeeKayDa.Auth.AspNetCore.Interaction.ProviderOptions.OnProviderChallenge.set -> void
+ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount
+ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount.LoginIdentifier.get -> string!
+ZeeKayDa.Auth.AspNetCore.Interaction.SignedInAccount.Subject.get -> string!
 static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Proceed -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!
 static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Reauthenticating -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!
 static readonly ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome.Refuse -> ZeeKayDa.Auth.AspNetCore.Interaction.ProviderChallengeOutcome!

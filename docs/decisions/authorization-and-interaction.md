@@ -5,7 +5,7 @@ error model, hands an unauthenticated one to the host's login page or an externa
 authenticated one to the host's consent page, which returns through `ConsentInteraction`, and
 answers a request past both with an authorization code at the registered redirect URI. Remembered
 consent grants are the unbuilt part. Service shapes: `docs/design/authorization-endpoint-interaction.md`;
-the interaction surface, cookies and SSO session: `interaction-and-session.md`; the code store: `token-stores.md`.
+the interaction surface and cookies: `interaction-and-session.md`; the SSO session's accounts: `signed-in-accounts.md`; the code store: `token-stores.md`.
 
 ## Decisions in force
 
@@ -59,15 +59,15 @@ and discovery says so (`authorization_response_iss_parameter_supported`), since 
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
 `login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
-**`prompt=select_account` is refused with `account_selection_required`**, with or without a session:
-there is no account picker, and a server that cannot obtain a selection must say so (§3.1.2.1).
+**`prompt=select_account` goes to the account picker (`signed-in-accounts.md`), and without one is
+refused `account_selection_required`**: a server that cannot obtain a selection must say so (§3.1.2.1).
 
 **An `id_token_hint` names the only user who may answer** (OIDC Core §3.1.2.2). It must be this
 issuer's ID token, signed by the key ring and issued to the requesting client — lifetime ignored, as
-a hint has usually expired — or it is `invalid_request` at the client. A session for anyone else
-counts as none: `login_required` under `prompt=none`, else the login page, told the subject as
-`LoginRequest.RequiredSubject`; a sign-in completing as anyone else — local, auto-promoted or
-linked, in derived form — is refused `login_required` before the session changes.
+a hint has usually expired — or it is `invalid_request` at the client. It selects that user's account
+from those the browser holds; with none, `login_required` under `prompt=none`, else the login page,
+told the subject as `LoginRequest.RequiredSubject`; a sign-in completing as anyone else — local,
+auto-promoted or linked, in derived form — is refused `login_required` before the session changes.
 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
@@ -82,8 +82,8 @@ answers `consent_required` — not yet, rather than a reversal of the paragraph 
 
 **A consent decision is recorded by the session it was asked of.** Every `ConsentInteraction` method
 is `zkd_i`-bound on the login service's terms and additionally refuses when the session cookie no
-longer names the session and subject that authenticated the request — a sign-out, or a sign-in as
-someone else, between the handoff and the answer. A grant can only narrow the request: it is
+longer holds the account session and subject that authenticated the request — a sign-out, or a
+sign-in replacing it, between the handoff and the answer. A grant can only narrow the request: it is
 re-intersected with the effective scopes, and always keeps `openid`, since agreeing to anything is
 agreeing to be identified and a page that wants to refuse calls `DenyAsync`. The client is resolved
 again at every step — the post-authentication dispatch, each consent call and each denial — and must

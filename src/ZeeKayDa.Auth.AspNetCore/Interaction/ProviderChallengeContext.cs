@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Microsoft.AspNetCore.Authentication;
 using ZeeKayDa.Auth.Authorization;
 
@@ -12,16 +13,15 @@ public sealed class ProviderChallengeContext
 {
     internal ProviderChallengeContext(
         ProviderDescriptor provider,
-        IReadOnlySet<PromptValue> prompts,
-        TimeSpan? maxAge,
-        string? loginHint,
+        AuthorizationRequestContext request,
         bool reauthenticationRequired,
         AuthenticationProperties properties)
     {
         Provider = provider;
-        Prompts = prompts;
-        MaxAge = maxAge;
-        LoginHint = loginHint;
+        Prompts = request.Prompts.ToFrozenSet();
+        MaxAge = request.MaxAge;
+        LoginHint = request.LoginHint;
+        RequiredSubject = request.RequiredSubject;
         ReauthenticationRequired = reauthenticationRequired;
         Properties = properties;
     }
@@ -39,9 +39,37 @@ public sealed class ProviderChallengeContext
     public string? LoginHint { get; }
 
     /// <summary>
+    /// The subject the client's <c>id_token_hint</c> names, or <see langword="null"/> when it sent
+    /// none. The user is sent to a provider with a hint only when no account the browser holds answers
+    /// it without signing in again — there is none for that user, or the client demands a fresh
+    /// sign-in — and a return as anyone else is answered <c>login_required</c> (OpenID Connect Core
+    /// §3.1.2.2).
+    /// </summary>
+    /// <remarks>
+    /// This is the session subject — for an external user the one <see cref="ExternalSubject.Derive"/>
+    /// computes — so the provider cannot be told it directly. A host with a user store can map it to
+    /// what the provider knows the user by and forward that as the provider's own <c>login_hint</c>;
+    /// any host can ask the provider for a fresh sign-in or an account choice, so that a provider
+    /// session for someone else does not answer silently.
+    /// </remarks>
+    /// <example>
+    /// For a provider registered with ASP.NET Core's OpenID Connect handler:
+    /// <code>
+    /// options.OnProviderChallenge = ctx =>
+    /// {
+    ///     if (ctx.RequiredSubject is not null)
+    ///         ctx.Properties.SetParameter(OpenIdConnectChallengeProperties.PromptKey, "select_account");
+    ///
+    ///     return ProviderChallengeOutcome.Proceed;
+    /// };
+    /// </code>
+    /// </example>
+    public string? RequiredSubject { get; }
+
+    /// <summary>
     /// Whether the client demands that the user authenticate again: the request carries
-    /// <c>prompt=login</c>, or it carries a <see cref="MaxAge"/> and the user has no session, or one
-    /// older than that.
+    /// <c>prompt=login</c>, or it carries a <see cref="MaxAge"/> and the browser holds no account that
+    /// answers the request, or one that authenticated longer ago than that.
     /// OpenID Connect Core §3.1.2.1 requires the authorization server to re-authenticate the user
     /// then, and, if it cannot, to return an error, typically <c>login_required</c>.
     /// </summary>
