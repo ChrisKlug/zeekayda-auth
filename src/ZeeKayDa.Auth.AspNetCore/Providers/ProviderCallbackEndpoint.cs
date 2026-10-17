@@ -81,10 +81,29 @@ internal sealed class ProviderCallbackEndpoint(
         ForgetChallengeIfFailed(context, feature);
 
         if (handled)
+        {
+            WarnIfAbandoned(feature);
             return Results.Empty;
+        }
 
         logger.LogError("The handler for provider {Provider} declined its own callback.", registration.Name);
         return await DeclineAsync(context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A host event that answered the callback itself leaves the user unauthenticated and the
+    /// interaction open, with nothing else to say so.
+    /// </summary>
+    private void WarnIfAbandoned(ProviderCallbackFeature feature)
+    {
+        if (!feature.Abandoned)
+            return;
+
+        logger.LogWarning(
+            "The handler for provider {Provider} handled its callback without signing in and without a failure, " +
+            "so the sign-in was abandoned. A host event that answers the callback itself, such as OnTicketReceived " +
+            "calling HandleResponse, stops the framework from completing it.",
+            feature.Provider.Name);
     }
 
     /// <summary>Removes the challenge cookie of a failure a host's own event answered, bypassing <see cref="FailAsync"/>.</summary>
