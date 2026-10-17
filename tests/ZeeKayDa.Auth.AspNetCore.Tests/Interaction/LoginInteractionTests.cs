@@ -313,6 +313,21 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     }
 
     [Fact]
+    public async Task GetRequestAsync_reports_no_reauthentication_required_when_a_fresh_session_arrived_after_the_handoff()
+    {
+        var query = ValidQuery();
+        query["max_age"] = "3600";
+        var waiting = await AuthorizeAsync(query);
+        await SignInAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(waiting)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeFalse(
+            "the page reads the session as it is now, and a session signed in since the handoff is within max_age");
+    }
+
+    [Fact]
     public async Task GetRequestAsync_reports_no_reauthentication_required_on_an_ordinary_arrival_with_no_session()
     {
         var page = await RenderLoginPageAsync(ValidQuery());
