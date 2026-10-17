@@ -216,7 +216,7 @@ public sealed class AuthorizationCodeStoreTests
     public async Task TryRedeemAsync_returns_NotFound_for_an_entry_copied_under_another_codes_key()
     {
         // A writer to the backing store moves a victim's sealed entry under a code they hold.
-        var backingStore = new InMemoryAuthorizationCodeBackingStore();
+        var backingStore = InMemoryStores.AuthorizationCodes();
         var store = CreateStore(backingStore: backingStore);
         await store.StoreAsync("victim-code", BuildEntry(clientId: "client-a"), CancellationToken.None);
         var victimEntry = await backingStore.GetAsync(StoreKey.Hash("code", "e", "victim-code"), CancellationToken.None);
