@@ -35,7 +35,7 @@ internal static class ReservedClaims
     }
 
     /// <summary>A base <see cref="Claim"/> copied member by member, properties included, without its own <c>Clone</c>.</summary>
-    public static Claim Materialize(Claim claim)
+    private static Claim Materialize(Claim claim)
     {
         var copy = new Claim(claim.Type, claim.Value, claim.ValueType, claim.Issuer, claim.OriginalIssuer);
         foreach (var (key, value) in claim.Properties)

@@ -134,7 +134,7 @@ internal sealed class InteractionOutcomes(
         // A client that skips consent gets its code in this response.
         context.Response.Headers.CacheControl = "no-store";
 
-        if (!AuthorizationFlow.IsRequiredSubject(requestContext.RequiredSubject, SsoSession.SubjectOf(signIn.Principal)))
+        if (!AuthorizationFlow.IsRequiredSubject(requestContext.RequiredSubject, signIn.Subject.Value))
         {
             var refusal = await ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.LoginRequired, NotTheHintedUser)
                 .ConfigureAwait(false);
@@ -142,7 +142,7 @@ internal sealed class InteractionOutcomes(
             return;
         }
 
-        var state = await flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
+        var state = await flow.PromoteAsync(context, signIn.Subject, signIn.AuthenticationMethods).ConfigureAwait(false);
 
         var authenticated = requestContext with
         {
@@ -390,4 +390,4 @@ internal sealed class InteractionOutcomes(
 }
 
 /// <summary>What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local sign-in.</summary>
-internal sealed record SignIn(ClaimsPrincipal Principal, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);
+internal sealed record SignIn(SessionSubject Subject, IReadOnlyList<string> AuthenticationMethods, string? ProviderScheme);

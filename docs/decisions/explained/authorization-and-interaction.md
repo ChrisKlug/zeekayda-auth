@@ -65,8 +65,8 @@ a call made while rendering a GET would decide every request on arrival.
   provider that was challenged, and its principal must carry a subject with an issuer. The host's
   optional `OnProviderSignIn` hook gets that pair as `ExternalIdentity` and can let it through, park
   it for a host page, or deny. The subject is derived from the issuer and upstream `sub`, so
-  equal ids at two issuers never meet. A parked sign-in finishes as the external user plus
-  collected claims, or as a local account the page has proven the user owns; the upstream `sub` is
+  equal ids at two issuers never meet. A parked sign-in finishes as the external user, whatever
+  the page collected kept in the host's own store, or as a local account the page has proven the user owns; the upstream `sub` is
   refused as that account. Checks run before the parked ticket is taken, so a failed call does not
   use it up.
 - **Deny** sends `access_denied`, plus a `zkd_error` naming the page for a client that opted in.
@@ -82,9 +82,9 @@ to the error page.
 browser cannot find or read it. At most 10 per browser. An ended interaction keeps a tombstone for a
 day holding only an encrypted client id, which is how a late click finds its client.
 
-**The SSO session is the `zkd.session` cookie** and nothing else: the user's claims plus `zkd:sid`,
-`zkd:auth_time` and `zkd:amr`, encrypted, browser-session lifetime. Host-supplied `zkd:` claims are
-stripped. The session id is kept when the same user signs in again. A missing `auth_time` fails
+**The SSO session is the `zkd.session` cookie** and nothing else: `sub`, `zkd:sid`, `zkd:auth_time`
+and `zkd:amr`, encrypted, browser-session lifetime. No other claim goes in, from a page or a
+provider. The session id is kept when the same user signs in again. A missing `auth_time` fails
 closed.
 
 ## What it costs

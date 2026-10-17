@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **The SSO session cookie holds only the framework's own claims, and a sign-in subject is limited
+  to printable ASCII** (#974). `zkd.session` now carries exactly `sub`, `zkd:sid`, `zkd:auth_time`
+  and `zkd:amr`: automatic promotion of an external sign-in no longer copies the provider's claims
+  into it, so a large provider claim set cannot overflow the `Cookie` header, and no personal data
+  sits in the browser for nothing. `additionalClaims` is removed from `LoginInteraction.SignInAsync`,
+  `ProviderSignInInteraction.SignInAsync` and `SignInWithReplacedAccountAsync`, superseding the
+  #781 and provider sign-in entries below: nothing read it, since tokens and userinfo get their
+  claims from `IClaimsProvider` (#723). A host-supplied subject must be 1–255 printable ASCII
+  characters with no space, and is refused with `ArgumentException` otherwise; OIDC Core §2 caps
+  `sub` at 255 ASCII characters, and a stray space would silently make two users.
+
 - **A PEM private key is never held in an immutable string** (#918). The PEM file source read each
   file into a `string`, on every refresh and for every signer, so an unencrypted private key stayed on
   the heap until collected. Files are now read into a pooled buffer that is wiped after use, and parsed
