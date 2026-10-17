@@ -36,6 +36,14 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// startup, since nothing could complete its callback.
     /// </para>
     /// <para>
+    /// The framework pins the callback path and sign-in scheme only on a
+    /// <see cref="RemoteAuthenticationOptions"/>. A handler that is not a
+    /// <see cref="RemoteAuthenticationHandler{TOptions}"/> must follow both conventions itself: it
+    /// handles its callback at <c>/connect/callback/{name}</c> under the issuer path, and it signs in
+    /// to <see cref="ZeeKayDaSchemes.External"/>. Otherwise the round trip is abandoned, which the
+    /// framework logs. Startup warns about every such provider.
+    /// </para>
+    /// <para>
     /// The schemes are the framework's: absent from the host's <see cref="AuthenticationOptions"/>,
     /// never challengeable by name. The login page sees them as <c>LoginRequest.Providers</c>.
     /// </para>

@@ -506,6 +506,41 @@ public sealed class ProviderHostIntegrationTests
         ShouldFailStartupWith(factory, "provider.handler_cannot_handle_requests");
     }
 
+    [Fact]
+    public void A_remote_handler_records_no_warning()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+            builder.WithProviders(auth => auth.AddOAuth("acme", ConfigureAcme));
+        });
+
+        using var client = NewClient(factory);
+
+        logs.Entries.Should().NotContain(entry => entry.Message.Contains("provider.handler_not_remote", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_request_handler_outside_the_remote_base_class_starts_with_a_warning_naming_it()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+            builder.WithProviders(auth =>
+                auth.AddScheme<AuthenticationSchemeOptions, PlainRequestHandler>("plain", "Plain", _ => { }));
+        });
+
+        using var client = NewClient(factory);
+
+        logs.Entries.Should().ContainSingle(entry => entry.Message.Contains("provider.handler_not_remote", StringComparison.Ordinal))
+            .Which.Should().Match<(string Category, LogLevel Level, string Message)>(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("'plain'", StringComparison.Ordinal)
+                && entry.Message.Contains(typeof(PlainRequestHandler).FullName!, StringComparison.Ordinal));
+    }
+
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────
 
     [Fact]
