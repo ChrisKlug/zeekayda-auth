@@ -39,7 +39,7 @@ public static class ZeeKayDaAuthBuilderClientConfigurationExtensions
     /// <code>
     /// "Clients": {
     ///   "Confidential": {
-    ///     "web-app": { "SecretHash": "$2b$12$...", "RedirectUris": [ "https://app.example/signin-oidc" ], "AllowedScopes": [ "openid" ] }
+    ///     "web-app": { "SecretHash": "$pbkdf2-sha256$i=600000$&lt;salt&gt;$&lt;hash&gt;", "RedirectUris": [ "https://app.example/signin-oidc" ], "AllowedScopes": [ "openid" ] }
     ///   },
     ///   "Public": {
     ///     "spa": { "RedirectUris": [ "https://spa.example/callback" ], "AllowedScopes": [ "openid" ] }
