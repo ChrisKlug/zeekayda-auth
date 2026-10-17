@@ -32,6 +32,16 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// The host names the providers and nothing else. The framework pins each handler's callback
     /// path, sign-in scheme and refusal handling, refuses a later change to them at startup, and
     /// drives the round trip: the login page starts it with <c>LoginInteraction.ChallengeAsync</c>.
+    /// A provider whose handler does not implement <see cref="IAuthenticationRequestHandler"/> fails
+    /// startup, since nothing could complete its callback.
+    /// </para>
+    /// <para>
+    /// The framework pins the callback path and sign-in scheme only on a
+    /// <see cref="RemoteAuthenticationOptions"/>. A handler that is not a
+    /// <see cref="RemoteAuthenticationHandler{TOptions}"/> must follow both conventions itself: it
+    /// handles its callback at <c>/connect/callback/{name}</c> under the issuer path, and it signs in
+    /// to <see cref="ZeeKayDaSchemes.External"/>. Otherwise the round trip is abandoned, which the
+    /// framework logs. Startup warns about every such provider.
     /// </para>
     /// <para>
     /// The schemes are the framework's: absent from the host's <see cref="AuthenticationOptions"/>,
@@ -95,6 +105,8 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
 
         services.TryAddSingleton<PinnedOptionDriftRecorder>();
 
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupVerifier, ProviderHandlerVerifier>());
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<IStartupActivator, HandlerOptionsActivator>());
         services.TryAddEnumerable(

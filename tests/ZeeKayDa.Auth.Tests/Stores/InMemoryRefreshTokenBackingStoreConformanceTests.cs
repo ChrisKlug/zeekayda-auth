@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// </summary>
 public sealed class InMemoryRefreshTokenBackingStoreConformanceTests : RefreshTokenBackingStoreConformanceTests
 {
-    protected override IRefreshTokenBackingStore CreateStore() => new InMemoryRefreshTokenBackingStore();
+    protected override IRefreshTokenBackingStore CreateStore() => InMemoryStores.RefreshTokens();
 
     // The mid-revoke case also asserts the own Status of a grant inserted after the revoke has
     // returned, which this store does not set retroactively; its family record makes the

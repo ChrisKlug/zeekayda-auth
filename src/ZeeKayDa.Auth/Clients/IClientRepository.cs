@@ -15,6 +15,9 @@ public interface IClientRepository
     /// <remarks>
     /// MUST return <see langword="null"/> for an unknown <c>client_id</c>, never throw, since throwing changes
     /// timing and enables enumeration (RFC 9700 §2.1). Throwing for an outage is allowed and answers HTTP 500.
+    /// The match MUST be exact and ordinal: a registration whose <see cref="IClient.ClientId"/> differs from
+    /// <paramref name="clientId"/>, even only in case or surrounding whitespace, is served as unknown and
+    /// logged (<c>client.client_id.mismatch</c>).
     /// </remarks>
     Task<IClientWithCredentials?> FindByClientIdAsync(
         string clientId,

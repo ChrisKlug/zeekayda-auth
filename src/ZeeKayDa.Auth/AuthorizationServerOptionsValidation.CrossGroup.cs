@@ -8,16 +8,6 @@ internal static partial class AuthorizationServerOptionsValidation
 {
     private static IEnumerable<ZeeKayDaConfigurationFailure> ValidateLifetimeRelationships(AuthorizationServerOptions options)
     {
-        // The code tombstone lives for the refresh token lifetime; a shorter one lets a late replay escape revocation.
-        if (RefreshTokensExpireBeforeCodes(options))
-        {
-            yield return new(
-                "configuration.token_endpoint.refresh_token_lifetime.shorter_than_code_lifetime",
-                "AuthorizationServerOptions.TokenEndpoint.RefreshTokenLifetime must be greater than or equal to " +
-                "AuthorizationServerOptions.AuthorizationEndpoint.AuthorizationCodeLifetime to ensure tombstone " +
-                "retention covers the authorization code validity window.");
-        }
-
         if (ClockSkewReachesHalfTheCodeLifetime(options))
         {
             var halfCodeLifetime = options.AuthorizationEndpoint.AuthorizationCodeLifetime / 2;
@@ -28,12 +18,6 @@ internal static partial class AuthorizationServerOptionsValidation
                 "extends the authorization code acceptance window past its intended expiry.");
         }
     }
-
-    /// <summary>Both lifetimes positive, so a non-positive one is reported only by its own group.</summary>
-    private static bool RefreshTokensExpireBeforeCodes(AuthorizationServerOptions options) =>
-        options.TokenEndpoint.RefreshTokenLifetime > TimeSpan.Zero
-        && options.AuthorizationEndpoint.AuthorizationCodeLifetime > TimeSpan.Zero
-        && options.TokenEndpoint.RefreshTokenLifetime < options.AuthorizationEndpoint.AuthorizationCodeLifetime;
 
     /// <summary>Both values in range, so an out-of-range one is reported only by its own rule.</summary>
     private static bool ClockSkewReachesHalfTheCodeLifetime(AuthorizationServerOptions options) =>

@@ -1078,6 +1078,28 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task prompt_select_account_is_refused_with_account_selection_required(bool withSession)
+    {
+        if (withSession)
+            await SignInAsync();
+
+        var query = ValidQuery();
+        query["prompt"] = "select_account";
+        query["state"] = "opaque-client-state";
+
+        var response = await AuthorizeAsync(query);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        DestinationOf(response).Should().Be(RegisteredRedirect);
+        var parameters = RedirectQueryOf(response);
+        parameters["error"].Should().Equal(["account_selection_required"]);
+        parameters["state"].Should().Equal(["opaque-client-state"]);
+        parameters["iss"].Should().Equal(["https://test.example.com"]);
+    }
+
+    [Theory]
     [InlineData(60, true)]
     [InlineData(3600, false)]
     public async Task max_age_re_authenticates_only_a_session_older_than_it_allows(int maxAge, bool expectsLogin)

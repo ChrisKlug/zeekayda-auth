@@ -157,11 +157,9 @@ confidential client's token endpoint authentication methods — start empty in t
 collection named in configuration replaces the default rather than adding to it. Add
 the values you want and the client gets exactly those; add none and it gets the default:
 `authorization_code`, `client_secret_basic`, and the `code` response type and `query` response mode
-when the client may use `authorization_code`. A `client_credentials`-only client gets no response
-types or modes:
+when the client may use `authorization_code`:
 
 ```csharp
-options.AllowedGrantTypes.Add(GrantType.ClientCredentials);
 options.AllowedTokenEndpointAuthMethods.Add(TokenEndpointAuthMethods.ClientSecretPost); // only client_secret_post
 ```
 
@@ -281,7 +279,6 @@ Common validation failures:
 | `client.redirect_uri.fragment` | Redirect URI contains a `#` fragment |
 | `client.redirect_uri.scheme_http_non_loopback` | `http://` URI for a non-loopback host |
 | `client.is_public.trinity_violation` | `IsPublic`, `Credentials`, and `AllowedTokenEndpointAuthMethods` are inconsistent |
-| `client.grant_types.client_credentials_on_public` | A public client allows `client_credentials`, which only a confidential client may use (RFC 6749 §4.4) |
 | `client.token_endpoint_auth_methods.not_subset` | Client auth method not advertised by the server — no authenticator performs it, or `TokenEndpoint.AdvertisedAuthMethods` withholds it |
 | `client.client_id.duplicate` | Two clients with the same `ClientId` |
 | `client.credentials.no_secret` | A confidential client sets neither `Secret` nor `SecretHash` |

@@ -135,7 +135,7 @@ public sealed class DiscoveryEndpointTests
     {
         // The endpoint is not served on such a host, so the metadata does not name it: a document
         // pointing at a 404 is worse than one without the field (RFC 8414 §2).
-        using var host = new EndpointHost(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var host = new EndpointHost(opts => opts.GrantTypesSupported = []);
 
         var doc = await GetDocumentAsync(host);
 
@@ -147,7 +147,7 @@ public sealed class DiscoveryEndpointTests
             "such a host issues no ID token and answers no UserInfo request, so it can supply none of them");
         doc.TryGetProperty("end_session_endpoint", out _).Should().BeFalse("without the code grant nobody signs in, so there is no session to end");
         doc.TryGetProperty("authorization_response_iss_parameter_supported", out _).Should().BeFalse("there is no authorization response");
-        doc.TryGetProperty("token_endpoint", out _).Should().BeTrue("the token endpoint is what such a host serves");
+        doc.TryGetProperty("token_endpoint", out _).Should().BeTrue();
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public sealed class DiscoveryEndpointTests
     {
         // The omitted fields are optional on the way in as well: a consumer binding the document
         // to OpenIdConfigurationDocument must not be told a required member is missing.
-        using var host = new EndpointHost(opts => opts.GrantTypesSupported = [GrantType.ClientCredentials]);
+        using var host = new EndpointHost(opts => opts.GrantTypesSupported = []);
         using var response = await GetAsync(host);
         var json = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
@@ -194,7 +194,7 @@ public sealed class DiscoveryEndpointTests
         document.ResponseTypesSupported.Should().BeNull();
         document.ResponseModesSupported.Should().BeNull();
         document.TokenEndpoint.Should().Be("https://test.example.com/connect/token");
-        document.GrantTypesSupported.Should().Equal(GrantType.ClientCredentials);
+        document.GrantTypesSupported.Should().BeEmpty();
     }
 
     [Fact]
@@ -492,6 +492,21 @@ public sealed class DiscoveryEndpointTests
         var failure = await host.StartupFailureAsync();
 
         failure.AllMessages().Should().Contain("Only 'https' is permitted");
+    }
+
+    [Fact]
+    public async Task Startup_rejects_the_AllowHttpLoopbackIssuer_flag_on_an_HTTPS_Issuer()
+    {
+        using var host = new EndpointHost(opts =>
+        {
+            opts.Issuer = "https://auth.example.com";
+            opts.Development.AllowHttpLoopbackIssuer = true;
+        });
+
+        var failure = await host.StartupFailureAsync();
+
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(failure)!
+            .AggregatedFailures.Should().Contain(f => f.Code == "configuration.development.allow_http_loopback_issuer.https_issuer");
     }
 
     [Fact]

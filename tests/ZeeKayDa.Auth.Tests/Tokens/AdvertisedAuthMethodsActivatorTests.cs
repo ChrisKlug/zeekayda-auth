@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 using ZeeKayDa.Auth.Tokens;
 
@@ -11,20 +10,14 @@ public sealed class AdvertisedAuthMethodsActivatorTests
 
     /// <summary>Runs the check for a server whose authenticators perform <paramref name="performable"/>.</summary>
     private static async Task<StartupVerificationContext> VerifyAsync(
-        string[] performable, string[]? filter, params GrantType[] grants)
+        string[] performable, string[]? filter)
     {
-        var options = new AuthorizationServerOptions
-        {
-            GrantTypesSupported = grants.Length > 0 ? [.. grants] : [GrantType.AuthorizationCode],
-        };
-        options.TokenEndpoint.AdvertisedAuthMethods = filter;
-
         var services = new ServiceCollection();
         services.AddSingleton(new AdvertisedAuthMethods(performable, filter));
         await using var provider = services.BuildServiceProvider();
         var context = new StartupVerificationContext();
 
-        await new AdvertisedAuthMethodsActivator(Options.Create(options), provider)
+        await new AdvertisedAuthMethodsActivator(provider)
             .VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
@@ -80,43 +73,6 @@ public sealed class AdvertisedAuthMethodsActivatorTests
             _clientSecretBasic);
 
         context.Failures.Should().BeEmpty();
-    }
-
-    // ── The client credentials grant needs a credential (RFC 6749 §4.4) ──────────────────────────
-
-    [Fact]
-    public async Task Verify_fails_when_client_credentials_is_served_and_the_filter_leaves_only_none()
-    {
-        var context = await VerifyAsync(_clientSecretBasic, [TokenEndpointAuthMethods.None], GrantType.ClientCredentials);
-
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.only_none_with_client_credentials");
-    }
-
-    [Fact]
-    public async Task Verify_fails_when_client_credentials_is_served_and_no_authenticator_is_registered()
-    {
-        // Also the core-only host: without the HTTP layer nothing but 'none' is performed.
-        var context = await VerifyAsync([], filter: null, GrantType.AuthorizationCode, GrantType.ClientCredentials);
-
-        context.Failures.Should().ContainSingle()
-            .Which.Code.Should().Be("token_endpoint.advertised_auth_methods.only_none_with_client_credentials");
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_when_client_credentials_is_served_and_a_credential_method_is_advertised()
-    {
-        var context = await VerifyAsync(_clientSecretBasic, filter: null, GrantType.ClientCredentials);
-
-        context.Failures.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Verify_succeeds_with_only_none_advertised_when_client_credentials_is_not_served()
-    {
-        var context = await VerifyAsync([], filter: null);
-
-        context.Failures.Should().BeEmpty("a server with only public clients serves the code grant with PKCE");
     }
 
     // ── Registration ──────────────────────────────────────────────────────────────────────────────

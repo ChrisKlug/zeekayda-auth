@@ -56,7 +56,7 @@ internal sealed class PfxFileSigningKeySource(
                 $"{nameof(CreateSignerAsync)} was called for key '{id.Value}', which is not a listed PFX file.");
 
         var bytes = await reader.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false);
-        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, bytes, cancellationToken).ConfigureAwait(false);
 
         var privateKey = OpenSigningPair(bytes, file.Path, password, pair => ImportPairedKey(pair, file.Path, password));
         return new LocalSigner(options.Algorithm, privateKey);
@@ -98,25 +98,40 @@ internal sealed class PfxFileSigningKeySource(
         if (await reader.TryReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false) is not { } bytes)
             return null;
 
-        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
+        var password = await ReadPasswordAsync(file, bytes, cancellationToken).ConfigureAwait(false);
 
         return OpenSigningPair(bytes, file.Path, password, pair => pair.Certificate.GetCertificate());
     }
 
+    /// <summary>The bundle's password, wiping <paramref name="bundle"/> when there is none, since it then never reaches <see cref="OpenSigningPair"/>.</summary>
+    private static async Task<string> ReadPasswordAsync(PfxFile file, byte[] bundle, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            CryptographicOperations.ZeroMemory(bundle);
+            throw;
+        }
+    }
+
     /// <summary>
-    /// Authenticates the bundle and hands its signing pair to <paramref name="use"/>. Listing and
-    /// signing both go through here, so they cannot disagree about which key a bundle signs with.
+    /// Authenticates the bundle and hands its signing pair to <paramref name="use"/>, then wipes
+    /// <paramref name="bytes"/>, which may hold a private key. Listing and signing both go through
+    /// here, so they cannot disagree about which key a bundle signs with.
     /// </summary>
     /// <exception cref="ZeeKayDaConfigurationException">
     /// The file is not a valid PKCS#12 bundle, is not MAC-protected, fails its integrity check
     /// (wrong password or tampering), uses an unsupported confidentiality mode, carries no private
     /// key, or does not identify exactly one signing certificate and key.
     /// </exception>
-    private static T OpenSigningPair<T>(byte[] bytes, string path, string password, Func<SigningPair, T> use)
+    internal static T OpenSigningPair<T>(byte[] bytes, string path, string password, Func<SigningPair, T> use)
     {
         try
         {
-            // skipCopy: `bytes` is this call's own buffer and is never mutated.
+            // skipCopy: `bytes` is this call's own buffer, wiped only once nothing reads it.
             var info = Pkcs12Info.Decode(bytes, out _, skipCopy: true);
 
             VerifyIntegrity(info, path, password);
@@ -133,12 +148,16 @@ internal sealed class PfxFileSigningKeySource(
                 "configured password is correct",
                 ex);
         }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(bytes);
+        }
     }
 
     private const string RsaOid = "1.2.840.113549.1.1.1";
     private const string EcOid = "1.2.840.10045.2.1";
 
-    private readonly record struct SigningPair(Pkcs12CertBag Certificate, Pkcs12SafeBag Key);
+    internal readonly record struct SigningPair(Pkcs12CertBag Certificate, Pkcs12SafeBag Key);
 
     /// <summary>
     /// Rejects a bundle with no password MAC, or one that does not verify. Without it, a certificate in
