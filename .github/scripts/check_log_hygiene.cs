@@ -330,6 +330,10 @@ internal static class SensitiveLogNames
         "code",
         "DPoP",
 
+        // An ID token presented back as a hint: a signed JWT carrying the user's sub and claims.
+        "id_token_hint",
+        "IdTokenHint",
+
         // Amended (#782): the client's login_hint is an email address or phone number — personal data.
         "login_hint",
         "LoginHint",
