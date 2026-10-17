@@ -40,7 +40,7 @@ internal sealed class AuthorizationCodeStore(
 
         var key = BuildEntryKey(code);
         var expiresAt = entry.ExpiresAt + _clockSkewTolerance;
-        var protectedBytes = ProtectEntry(entry);
+        var protectedBytes = ProtectEntry(key, entry);
 
         var inserted = await Guarded(
             () => backingStore.TryInsertAsync(key, protectedBytes, expiresAt, cancellationToken),
@@ -100,7 +100,7 @@ internal sealed class AuthorizationCodeStore(
         AuthorizationCodeEntry entry;
         try
         {
-            entry = UnprotectEntry(entryBytes.Value);
+            entry = UnprotectEntry(entryKey, entryBytes.Value);
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException or ArgumentException)
         {
@@ -161,12 +161,12 @@ internal sealed class AuthorizationCodeStore(
             : new AuthorizationCodeRedemptionResult.AlreadyRedeemed { FamilyId = familyId };
     }
 
-    private byte[] ProtectEntry(AuthorizationCodeEntry entry)
+    private byte[] ProtectEntry(StoreKey key, AuthorizationCodeEntry entry)
     {
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(entry, StoreJsonSerializerContext.Default.AuthorizationCodeEntry);
-            return _protector.Protect(json);
+            return ProtectorFor(key).Protect(json);
         }
         catch (Exception ex) when (ex is not ZeeKayDaStoreException)
         {
@@ -174,11 +174,14 @@ internal sealed class AuthorizationCodeStore(
         }
     }
 
-    private AuthorizationCodeEntry UnprotectEntry(ReadOnlyMemory<byte> protectedBytes)
+    private AuthorizationCodeEntry UnprotectEntry(StoreKey key, ReadOnlyMemory<byte> protectedBytes)
     {
-        var json = _protector.Unprotect(protectedBytes.ToArray());
+        var json = ProtectorFor(key).Unprotect(protectedBytes.ToArray());
         return JsonSerializer.Deserialize(json, StoreJsonSerializerContext.Default.AuthorizationCodeEntry)!;
     }
+
+    // Sealed to its own row, so a writer to the store cannot move a victim's entry under a code they hold.
+    private IDataProtector ProtectorFor(StoreKey entryKey) => _protector.CreateProtector(entryKey.ToString());
 
     private static byte[] SerializeTombstone(string familyId) =>
         JsonSerializer.SerializeToUtf8Bytes(

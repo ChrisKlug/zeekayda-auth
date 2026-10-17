@@ -2416,3 +2416,12 @@ and the PR's CodeQL, CodeScene and Copilot review; no High or Critical open. `46
 - **Accepted residuals (maintainer):** no test drives the Unix owner reject path through the real `fstat` (needs `chown` as root) — `IsTrustedOwner_trusts_root_and_the_process_user_only` proves the policy.
   A version 1 root placed first is not caught at listing; it fails at the handover's pairing. **Not covered:** the macOS x86_64 `$INODE64` binding runs on no CI leg.
   A write grant to a named Windows account, or a POSIX ACL entry, is not inspected — the same model the key-file check has always used, so this sign-off does not claim the file is writable by its owner alone.
+
+## 2026-10-17 — a stored code or refresh-token payload is sealed to its own row (#961, code frozen at `bac9a02`)
+M1 audit finding (Medium, area 5) and the security agent's fix-round review (sign-off, no findings); no Copilot lens (quota). `bac9a02` was read by the security agent and the maintainer on the PR.
+- Both token stores seal each payload under a purpose narrowed by the row's own `StoreKey` (`ProtectorFor(key)`), the model the interaction stores already use, so a writer to the backing
+  store cannot move a victim's payload under a handle it holds; a moved payload fails to unprotect and reads as absent. Closed —
+  `TryRedeemAsync_returns_NotFound_for_an_entry_copied_under_another_codes_key`, `TryConsumeAsync_returns_NotFound_for_a_payload_copied_from_another_grant_row`.
+- The entry format and the plaintext tombstone (`zkd:code:t`) and interaction marker (`zkd:code:i`) are unchanged; the register's "a persistence breach discloses nothing redeemable" now holds for a
+  writer as well as a reader. Purposes differ per store (distinct parent purpose and key prefix) and per row (hash), so no two rows share a protector.
+- **Not covered:** a writer who also holds the Data Protection key ring can re-seal anything; that is in-process access and outside the threat model.
