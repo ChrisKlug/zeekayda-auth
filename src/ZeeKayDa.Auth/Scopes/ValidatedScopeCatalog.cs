@@ -42,6 +42,7 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
         var scopes = Copy(served, failures);
 
         CheckNamesArePresent(scopes, failures);
+        CheckNamesAreScopeTokens(scopes, failures);
         CheckNamesAreUnique(scopes, failures);
         CheckClaims(scopes, failures);
         CheckAudiences(scopes, failures);
@@ -134,6 +135,27 @@ internal sealed class ValidatedScopeCatalog(IScopeRepository repository)
                 $"OpenID Connect Discovery 1.0 §3 defines as a list of strings. Scope: '{scope.Name}'."));
         }
     }
+
+    /// <summary>Every named scope is an RFC 6749 §3.3 scope-token, so it cannot split a space-delimited scope list.</summary>
+    private static void CheckNamesAreScopeTokens(List<ScopeDefinition> scopes, List<ZeeKayDaConfigurationFailure> failures)
+    {
+        foreach (var scope in scopes.Where(IsNamedButNotAScopeToken))
+        {
+            failures.Add(new ZeeKayDaConfigurationFailure(
+                "scopes.name.invalid",
+                $"IScopeRepository returned a scope named '{scope.Name}', which is not a scope-token. RFC 6749 §3.3 " +
+                "allows only the printable ASCII characters other than space, '\"' and '\\' in a scope name, since " +
+                "the scope parameter and the scope claim are space-delimited lists of names."));
+        }
+    }
+
+    /// <summary>A blank name is reported as blank, not also as malformed.</summary>
+    private static bool IsNamedButNotAScopeToken(ScopeDefinition scope) =>
+        !string.IsNullOrWhiteSpace(scope.Name) && !scope.Name.All(IsScopeTokenCharacter);
+
+    /// <summary><c>NQCHAR = %x21 / %x23-5B / %x5D-7E</c> (RFC 6749 Appendix A).</summary>
+    private static bool IsScopeTokenCharacter(char c) =>
+        c is '!' or (>= '#' and <= '[') or (>= ']' and <= '~');
 
     /// <summary>
     /// No two scopes share an ordinal name: a duplicate resolves to whichever came first. Two sets rather than

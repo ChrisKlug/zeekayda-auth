@@ -66,6 +66,19 @@ public sealed class ScopePresenceActivatorTests
     }
 
     [Fact]
+    public async Task VerifyAsync_adds_a_failure_with_code_scopes_name_invalid_when_a_name_is_not_a_scope_token()
+    {
+        var (sut, provider) = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId, new ScopeDefinition { Name = "read write" }]));
+        using var _ = provider;
+        var context = new StartupVerificationContext();
+
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
+
+        context.Failures.Should().ContainSingle()
+            .Which.Code.Should().Be("scopes.name.invalid");
+    }
+
+    [Fact]
     public async Task VerifyAsync_adds_a_failure_with_code_scopes_openid_hidden_when_openid_is_not_discoverable()
     {
         var (sut, provider) = BuildSut(new InMemoryScopeRepository([StandardScopes.OpenId with { IsDiscoverable = false }]));

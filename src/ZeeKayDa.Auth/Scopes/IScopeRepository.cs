@@ -26,8 +26,9 @@ public interface IScopeRepository
     /// </item>
     /// <item>
     /// Every <see cref="ScopeDefinition.Name"/> is non-null, non-empty and not whitespace
-    /// (<c>scopes.name.blank</c>), and no two definitions share a name, compared ordinally
-    /// (<c>scopes.name.duplicate</c>).
+    /// (<c>scopes.name.blank</c>), is an RFC 6749 §3.3 scope-token — printable ASCII other than
+    /// space, <c>"</c> and <c>\</c> (<c>scopes.name.invalid</c>) — and no two definitions share a
+    /// name, compared ordinally (<c>scopes.name.duplicate</c>).
     /// </item>
     /// <item>
     /// Every claim list — <see cref="ScopeDefinition.IdTokenClaims"/>,
