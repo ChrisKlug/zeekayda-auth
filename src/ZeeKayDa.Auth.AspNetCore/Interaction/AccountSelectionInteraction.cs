@@ -171,14 +171,12 @@ public sealed class AccountSelectionInteraction
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
     /// resolved outside one.
     /// </exception>
-    public async Task SelectAsync(string subject)
+    public Task SelectAsync(string subject)
     {
         ArgumentException.ThrowIfNullOrEmpty(subject);
 
-        var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+        return StepAsync(async (context, requestContext) =>
         {
-            var requestContext = await ResolveAsync(context).ConfigureAwait(false);
             var (sessions, accounts) = await SelectableAsync(context, requestContext).ConfigureAwait(false);
 
             // Request input, so the message does not echo it.
@@ -189,7 +187,7 @@ public sealed class AccountSelectionInteraction
                     "the Subject of an entry in AccountSelectionRequest.Accounts.");
 
             await _services.Outcomes.CompleteSelectionAsync(context, requestContext, sessions, account).ConfigureAwait(false);
-        }).ConfigureAwait(false);
+        });
     }
 
     /// <summary>
@@ -208,16 +206,12 @@ public sealed class AccountSelectionInteraction
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
     /// resolved outside one.
     /// </exception>
-    public async Task UseAnotherAccountAsync()
-    {
-        var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+    public Task UseAnotherAccountAsync() =>
+        StepAsync(async (context, requestContext) =>
         {
-            var requestContext = await ResolveAsync(context).ConfigureAwait(false);
             var result = await _services.Outcomes.AuthenticateAsync(context, requestContext).ConfigureAwait(false);
             await InteractionOutcomes.EndWithAsync(context, result).ConfigureAwait(false);
-        }).ConfigureAwait(false);
-    }
+        });
 
     /// <summary>
     /// Ends the authorization request without continuing as anyone, answering the client with
@@ -236,13 +230,20 @@ public sealed class AccountSelectionInteraction
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
     /// resolved outside one.
     /// </exception>
-    public async Task DenyAsync()
+    public Task DenyAsync() =>
+        StepAsync((context, requestContext) => _services.Outcomes.DenyAsync(context, requestContext, Denial.CancelledAtSignIn));
+
+    /// <summary>
+    /// Runs a terminal step for the addressed interaction, from the picker's form post only; with
+    /// nothing to continue, the framework answers instead.
+    /// </summary>
+    private async Task StepAsync(Func<HttpContext, AuthorizationRequestContext, Task> step)
     {
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var requestContext = await ResolveAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, Denial.CancelledAtSignIn).ConfigureAwait(false);
+            await step(context, requestContext).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

@@ -256,7 +256,7 @@ public sealed class LoginInteraction
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
     public Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null) =>
-        SignInAsync(subject, authenticationMethods, loginIdentifier, addAccount: false);
+        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, addAccount: false));
 
     /// <summary>
     /// Signs the user in as <paramref name="subject"/>, authenticated by
@@ -342,25 +342,16 @@ public sealed class LoginInteraction
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
     public Task AddAccountAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null) =>
-        SignInAsync(subject, authenticationMethods, loginIdentifier, addAccount: true);
+        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, addAccount: true));
 #pragma warning restore RS0026
 
-    private async Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, bool addAccount)
-    {
-        var methods = SignInArguments.Methods(authenticationMethods);
-        var user = SessionSubject.From(subject);
-        var identifier = SignInArguments.LoginIdentifier(loginIdentifier);
-
-        var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
+    /// <summary>Signs in what the arguments, already checked, describe.</summary>
+    private Task CompleteAsync(SignIn signIn) =>
+        StepAsync(async (context, requestContext) =>
         {
-            var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
             await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-
-            var signIn = new SignIn(user, methods, ProviderScheme: null, identifier, addAccount);
             await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
-        }).ConfigureAwait(false);
-    }
+        });
 
     /// <summary>
     /// Ends the authorization request without signing anyone in, answering the client with
@@ -381,13 +372,20 @@ public sealed class LoginInteraction
     /// The request is not a <c>POST</c>, or there is no active HTTP request — the service was
     /// resolved outside one.
     /// </exception>
-    public async Task DenyAsync()
+    public Task DenyAsync() =>
+        StepAsync((context, requestContext) => _services.Outcomes.DenyAsync(context, requestContext, Denial.CancelledAtSignIn));
+
+    /// <summary>
+    /// Runs a terminal step for the addressed interaction, from the login form's post only; with
+    /// nothing to continue, the framework answers instead.
+    /// </summary>
+    private async Task StepAsync(Func<HttpContext, AuthorizationRequestContext, Task> step)
     {
         var context = RequireStateChangingRequest();
         await _services.NothingToContinue.SignInStepAsync(context, Page, async () =>
         {
             var requestContext = await _services.Flow.ResolveAddressedAsync(context).ConfigureAwait(false);
-            await _services.Outcomes.DenyAsync(context, requestContext, Denial.CancelledAtSignIn).ConfigureAwait(false);
+            await step(context, requestContext).ConfigureAwait(false);
         }).ConfigureAwait(false);
     }
 

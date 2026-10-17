@@ -25,15 +25,6 @@ internal static class PendingTicketItems
     public const string AddAccount = "zkd:add_account";
 }
 
-/// <summary>
-/// Where a sign-in puts its account among those the browser holds: its login identifier, and
-/// whether it joins them or replaces them.
-/// </summary>
-internal sealed record AccountPlacement(string? LoginIdentifier, bool AddAccount)
-{
-    public static AccountPlacement Replace { get; } = new(LoginIdentifier: null, AddAccount: false);
-}
-
 /// <summary>A parked external principal, as read back from the interaction store, with the host's placement for it.</summary>
 internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider, AccountPlacement Placement);
 

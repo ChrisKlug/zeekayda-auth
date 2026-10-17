@@ -406,7 +406,7 @@ public sealed class SsoSessionAccountsTests : IDisposable
             UseAsync(async (context, session) =>
             {
                 var sessions = await session.ReadAsync(context);
-                await session.EndAsync(context, sessions, sessions.Find(subject)!.SessionId);
+                await session.EndAsync(context, sessions, sessions.Find(subject)!);
 
                 return true;
             });

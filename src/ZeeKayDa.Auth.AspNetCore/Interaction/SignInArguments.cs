@@ -9,6 +9,18 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 internal static class SignInArguments
 {
     /// <summary>
+    /// A local sign-in, its arguments checked in the order the login page's documentation lists
+    /// them, so the first one wrong is the one reported.
+    /// </summary>
+    public static SignIn Local(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, bool addAccount)
+    {
+        var methods = Methods(authenticationMethods);
+        var user = SessionSubject.From(subject);
+
+        return new SignIn(user, methods, ProviderScheme: null, LoginIdentifier(loginIdentifier), addAccount);
+    }
+
+    /// <summary>
     /// A copy of the authentication methods, refused here so the blame lands on the caller's argument.
     /// </summary>
     public static string[] Methods(IEnumerable<string> authenticationMethods)
@@ -36,9 +48,7 @@ internal static class SignInArguments
         if (loginIdentifier is null)
             return null;
 
-        if (string.IsNullOrWhiteSpace(loginIdentifier)
-            || loginIdentifier.Length > AuthorizeRequestValidator.MaxLoginHintLength
-            || loginIdentifier.EnumerateRunes().Any(AuthorizeRequestValidator.IsRefusedInLoginHint))
+        if (!MeetsTheLoginHintRule(loginIdentifier))
         {
             throw new ArgumentException(
                 "The login identifier must be 1–256 characters, not blank, with no control, line-separator "
@@ -49,4 +59,18 @@ internal static class SignInArguments
 
         return loginIdentifier;
     }
+
+    private static bool MeetsTheLoginHintRule(string value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= AuthorizeRequestValidator.MaxLoginHintLength
+        && !value.EnumerateRunes().Any(AuthorizeRequestValidator.IsRefusedInLoginHint);
+}
+
+/// <summary>
+/// Where a sign-in puts its account among those the browser holds: its login identifier, and
+/// whether it joins them or replaces them.
+/// </summary>
+internal sealed record AccountPlacement(string? LoginIdentifier, bool AddAccount)
+{
+    public static AccountPlacement Replace { get; } = new(LoginIdentifier: null, AddAccount: false);
 }

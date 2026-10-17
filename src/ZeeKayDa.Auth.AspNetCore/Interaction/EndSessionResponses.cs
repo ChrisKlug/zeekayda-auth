@@ -23,7 +23,7 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
         ArgumentNullException.ThrowIfNull(sessions);
         ArgumentNullException.ThrowIfNull(account);
 
-        await session.EndAsync(context, sessions, account.SessionId).ConfigureAwait(false);
+        await session.EndAsync(context, sessions, account).ConfigureAwait(false);
         InteractionBindingCookie.DeleteAll(context);
 
         return Signed(redirect);

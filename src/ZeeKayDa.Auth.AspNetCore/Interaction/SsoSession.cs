@@ -143,12 +143,12 @@ internal sealed class SsoSession(
             .Where(identity => identity.AuthenticationType == ZeeKayDaCookies.Session)
             .Select(ReadAccount)
             .OfType<SsoSessionState>()
-            .Where(account => !IsExpired(account, now));
+            .Where(account => now < account.AuthTime + Lifetime);
 
         var clients = result.Principal.Identities
             .Where(identity => identity.AuthenticationType == ClientsIdentityType)
             .SelectMany(identity => identity.FindAll(SsoSessionClaimTypes.ClientAccount))
-            .Select(claim => ReadClient(claim.Value))
+            .Select(ReadClient)
             .OfType<ClientAccount>();
 
         return Trim(accounts, clients);
@@ -178,7 +178,7 @@ internal sealed class SsoSession(
             LoginIdentifier = signIn.LoginIdentifier ?? held?.LoginIdentifier,
         };
 
-        var others = signIn.AddAccount ? Without(current.Accounts, subject) : [];
+        var others = signIn.AddAccount ? Without(current.Accounts, account) : [];
         await WriteAsync(context, Trim([account, .. others], [new ClientAccount(clientId, subject), .. current.Clients])).ConfigureAwait(false);
 
         return account;
@@ -199,18 +199,19 @@ internal sealed class SsoSession(
         if (remembered is not null && string.Equals(remembered.Subject, account.Subject, StringComparison.Ordinal))
             return;
 
-        var accounts = Trim([account, .. Without(current.Accounts, account.Subject)], [new ClientAccount(clientId, account.Subject), .. current.Clients]);
+        var accounts = Trim([account, .. Without(current.Accounts, account)], [new ClientAccount(clientId, account.Subject), .. current.Clients]);
         await WriteAsync(context, accounts).ConfigureAwait(false);
     }
 
-    /// <summary>Signs out the account holding <paramref name="sessionId"/>; the cookie goes with the last one.</summary>
-    public async Task EndAsync(HttpContext context, SsoSessionList current, string sessionId)
+    /// <summary>Signs out <paramref name="ended"/>; the cookie goes with the last account.</summary>
+    public async Task EndAsync(HttpContext context, SsoSessionList current, SsoSessionState ended)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(ended);
 
         var remaining = current.Accounts
-            .Where(account => !string.Equals(account.SessionId, sessionId, StringComparison.Ordinal))
+            .Where(account => !string.Equals(account.SessionId, ended.SessionId, StringComparison.Ordinal))
             .ToArray();
 
         if (remaining.Length == 0)
@@ -243,8 +244,8 @@ internal sealed class SsoSession(
         return new SsoSessionList(kept, remembered);
     }
 
-    private static IEnumerable<SsoSessionState> Without(IEnumerable<SsoSessionState> accounts, string subject) =>
-        accounts.Where(account => !string.Equals(account.Subject, subject, StringComparison.Ordinal));
+    private static IEnumerable<SsoSessionState> Without(IEnumerable<SsoSessionState> accounts, SsoSessionState excluded) =>
+        accounts.Where(account => !string.Equals(account.Subject, excluded.Subject, StringComparison.Ordinal));
 
     /// <summary>
     /// Writes the list, expiring with its most recently authenticated account: a write for a choice
@@ -304,8 +305,9 @@ internal sealed class SsoSession(
         };
     }
 
-    private static ClientAccount? ReadClient(string value)
+    private static ClientAccount? ReadClient(Claim claim)
     {
+        var value = claim.Value;
         var separator = value.IndexOf(' ', StringComparison.Ordinal);
 
         return separator > 0 && separator < value.Length - 1
@@ -322,6 +324,4 @@ internal sealed class SsoSession(
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : DateTimeOffset.MinValue;
     }
-
-    private bool IsExpired(SsoSessionState account, DateTimeOffset now) => now >= account.AuthTime + Lifetime;
 }

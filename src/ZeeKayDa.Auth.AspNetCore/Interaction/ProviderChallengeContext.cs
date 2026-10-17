@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Microsoft.AspNetCore.Authentication;
 using ZeeKayDa.Auth.Authorization;
 
@@ -12,18 +13,15 @@ public sealed class ProviderChallengeContext
 {
     internal ProviderChallengeContext(
         ProviderDescriptor provider,
-        IReadOnlySet<PromptValue> prompts,
-        TimeSpan? maxAge,
-        string? loginHint,
-        string? requiredSubject,
+        AuthorizationRequestContext request,
         bool reauthenticationRequired,
         AuthenticationProperties properties)
     {
         Provider = provider;
-        Prompts = prompts;
-        MaxAge = maxAge;
-        LoginHint = loginHint;
-        RequiredSubject = requiredSubject;
+        Prompts = request.Prompts.ToFrozenSet();
+        MaxAge = request.MaxAge;
+        LoginHint = request.LoginHint;
+        RequiredSubject = request.RequiredSubject;
         ReauthenticationRequired = reauthenticationRequired;
         Properties = properties;
     }

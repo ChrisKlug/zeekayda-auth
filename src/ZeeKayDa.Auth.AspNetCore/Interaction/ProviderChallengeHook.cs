@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -45,14 +44,7 @@ internal sealed class ProviderChallengeHook(
         if (hook is null)
             return reauthenticationRequired ? NotReauthenticated : null;
 
-        var challenge = new ProviderChallengeContext(
-            registration.Descriptor,
-            requestContext.Prompts.ToFrozenSet(),
-            requestContext.MaxAge,
-            requestContext.LoginHint,
-            requestContext.RequiredSubject,
-            reauthenticationRequired,
-            properties);
+        var challenge = new ProviderChallengeContext(registration.Descriptor, requestContext, reauthenticationRequired, properties);
 
         if (Invoke(hook, challenge, registration) is not { } outcome)
             return HookFailed;

@@ -418,25 +418,18 @@ internal sealed class InteractionOutcomes(
     }
 
     /// <summary>
-    /// Terminal. Parks <paramref name="principal"/>, with the host's <paramref name="placement"/> for
-    /// it, and sends the user to the caller-validated <paramref name="path"/>.
+    /// Terminal. Parks <paramref name="ticket"/> — the principal, its provider and the host's
+    /// placement for it — and sends the user to the caller-validated <paramref name="path"/>.
     /// </summary>
-    public async Task ParkAsync(
-        HttpContext context,
-        AuthorizationRequestContext requestContext,
-        ProviderRegistration registration,
-        ClaimsPrincipal principal,
-        PathString path,
-        AccountPlacement placement)
+    public async Task ParkAsync(HttpContext context, AuthorizationRequestContext requestContext, PendingTicket ticket, PathString path)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(requestContext);
-        ArgumentNullException.ThrowIfNull(registration);
-        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(ticket);
 
         context.Response.Headers.CacheControl = "no-store";
 
-        await flow.ParkPendingAsync(context, new PendingTicket(principal, registration.Name, placement), requestContext).ConfigureAwait(false);
+        await flow.ParkPendingAsync(context, ticket, requestContext).ConfigureAwait(false);
         await WriteAsync(context, Results.Redirect(InteractionHandoff.BuildRedirectUrl(path.Value!, requestContext.Id)))
             .ConfigureAwait(false);
     }
