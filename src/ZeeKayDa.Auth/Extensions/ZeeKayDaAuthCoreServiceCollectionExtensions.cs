@@ -69,6 +69,8 @@ public static class ZeeKayDaAuthCoreServiceCollectionExtensions
 
         // The framework's token stores encrypt what they save.
         services.AddDataProtection();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupVerifier, DataProtectionKeyRepositoryVerifier>());
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
 
         AddStartupVerification(services);
