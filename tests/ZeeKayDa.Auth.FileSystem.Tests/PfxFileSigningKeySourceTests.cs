@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.FileSystem.Tests.Fixtures;
 using ZeeKayDa.Auth.Tokens;
@@ -33,7 +34,8 @@ public sealed class PfxFileSigningKeySourceTests
 
     private static PfxFileSigningKeySource BuildSource(
         IEnumerable<PfxFile> files,
-        SigningAlgorithm algorithm = SigningAlgorithm.RS256)
+        SigningAlgorithm algorithm = SigningAlgorithm.RS256,
+        ILogger<PfxFileSigningKeySource>? logger = null)
     {
         var options = new PfxFileSigningOptions();
         foreach (var file in files)
@@ -43,7 +45,8 @@ public sealed class PfxFileSigningKeySourceTests
 
         return new PfxFileSigningKeySource(
             Options.Create(options),
-            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)));
+            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)),
+            TestSanitizingLogger.Create(logger ?? NullLogger<PfxFileSigningKeySource>.Instance));
     }
 
     private static X509Certificate2 CreateRsaCertificate() =>
@@ -102,6 +105,70 @@ public sealed class PfxFileSigningKeySourceTests
         using var rsa = RSA.Create(keySet.Single().PublicKey.RsaPublicParameters!.Value);
         rsa.VerifyData(signingInput, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
             .Should().BeTrue("the signer must be opened over the same key pair the read reported");
+    }
+
+    // ── Weak key encryption warns, once per version of the file ─────────────────────────────────
+
+    [Fact]
+    public async Task ReadAsync_lists_a_key_shrouded_under_3DES_and_SHA1_and_warns_once_across_two_reads()
+    {
+        // The Windows Export-PfxCertificate default: refusing it would refuse the bundles most hosts have.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteBytes("legacy.pfx", AdversarialPkcs12Factory.KeyShroudedUnder(
+            new PbeParameters(PbeEncryptionAlgorithm.TripleDes3KeyPkcs12, HashAlgorithmName.SHA1, 2048),
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365)));
+        var logger = new CapturingLogger<PfxFileSigningKeySource>();
+        var sut = BuildSource([new PfxFile(path, Password())], logger: logger);
+
+        var first = await sut.ReadAsync(ct);
+        var second = await sut.ReadAsync(ct);
+
+        first.Keys.Should().ContainSingle();
+        second.Keys.Should().ContainSingle();
+        logger.Entries.Should().ContainSingle()
+            .Which.Should().Match<(LogLevel Level, string Message)>(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("signing.file_signing.weak_key_encryption")
+                && entry.Message.Contains(path));
+    }
+
+    [Fact]
+    public async Task ReadAsync_lists_a_key_stored_without_encryption_and_warns_once_across_two_reads()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteBytes("unencrypted-key.pfx", AdversarialPkcs12Factory.KeyStoredWithoutEncryption(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365)));
+        var logger = new CapturingLogger<PfxFileSigningKeySource>();
+        var sut = BuildSource([new PfxFile(path, Password())], logger: logger);
+
+        var first = await sut.ReadAsync(ct);
+        var second = await sut.ReadAsync(ct);
+
+        first.Keys.Should().ContainSingle();
+        second.Keys.Should().ContainSingle();
+        logger.Entries.Should().ContainSingle()
+            .Which.Should().Match<(LogLevel Level, string Message)>(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("signing.file_signing.weak_key_encryption")
+                && entry.Message.Contains(path));
+    }
+
+    [Fact]
+    public async Task ReadAsync_does_not_warn_about_a_key_shrouded_under_AES_and_PBKDF2()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteBytes("modern.pfx", AdversarialPkcs12Factory.KeyShroudedUnder(
+            new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, 2048),
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365)));
+        var logger = new CapturingLogger<PfxFileSigningKeySource>();
+        var sut = BuildSource([new PfxFile(path, Password())], logger: logger);
+
+        await sut.ReadAsync(ct);
+
+        logger.Entries.Should().BeEmpty();
     }
 
     // ── The key bag is never decrypted on the read path ──────────────────────────────────────────
@@ -653,7 +720,7 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
-    public async Task ReadAsync_reports_an_empty_password_when_the_bundle_has_one_as_a_per_entry_failure()
+    public async Task ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable()
     {
         var ct = TestContext.Current.CancellationToken;
         using var tempDir = new TempSigningKeyDirectory();
@@ -663,7 +730,38 @@ public sealed class PfxFileSigningKeySourceTests
 
         var listing = await sut.ReadAsync(ct);
 
-        listing.ShouldReportOnly(path, "signing.file_signing.invalid_pfx");
+        listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
+    public async Task ReadAsync_refuses_a_bundle_exported_under_an_empty_password()
+    {
+        // A key encrypted under "" is a plain key in disguise, and "" is most often a secret that
+        // was never bound; PEM refuses it the same way.
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("empty.pfx", certificate, string.Empty);
+        var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
+
+        var listing = await sut.ReadAsync(ct);
+
+        listing.ShouldReportOnly(path, "signing.file_signing.password_unavailable");
+    }
+
+    [Fact]
+    public async Task CreateSignerAsync_refuses_a_password_source_that_returns_an_empty_string()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        using var certificate = CreateRsaCertificate();
+        var path = tempDir.WritePfxFile("empty.pfx", certificate, string.Empty);
+        var sut = BuildSource(new PfxFile(path, Password(string.Empty)));
+
+        var act = async () => await sut.CreateSignerAsync(new SourceKeyId(path), ct);
+
+        (await act.Should().ThrowAsync<ZeeKayDaConfigurationException>())
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "signing.file_signing.password_unavailable");
     }
 
     [Fact]

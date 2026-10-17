@@ -2437,6 +2437,15 @@ M1 audit finding (Low, area 2), the maintainer's reading of PR #1016, and the se
   `A_subject_claim_without_an_issuer_is_refused_at_promotion`, `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`.
 - The host chooses an external user's subject through `OnProviderSignIn` → `SignInWithReplacedAccountAsync`; there is no separate derivation seam (maintainer).
 - **Accepted residuals (maintainer):** two registrations of one issuer share identities. Two distinct upstreams collide only if the host stamps the same `ClaimsIssuer` string on both — operator error, no test.
+## 2026-10-17 — a PFX bundle refuses an empty password and warns of weak or absent key encryption (#989, code frozen at `90d82b3`)
+M1 audit findings (two Lows, area 4), the security agent's fix-round review (sign-off, one Low fixed) and its verification of the fix diff; no Copilot lens (quota). `82c454f`, `1b7fb4f`, `90d82b3` read by the security agent; the maintainer reads the PR.
+- A `PasswordSource` returning `""` is `password_unavailable` for PFX as for PEM, before any decode, on listing and signing; this supersedes the #917 entry's "PFX keeps `\"\"`". Closed —
+  `ReadAsync_reports_a_password_source_that_returns_an_empty_string_as_password_unavailable`, `ReadAsync_refuses_a_bundle_exported_under_an_empty_password`, `CreateSignerAsync_refuses_a_password_source_that_returns_an_empty_string`.
+- A key bag shrouded under a legacy scheme, under 2048 PBKDF2 iterations or a non-AES cipher (the PEM floor, one shared `KeyEncryptionStrength`), or stored unshrouded, lists and signs but logs
+  `signing.file_signing.weak_key_encryption` once per file version — a warning, not a refusal, because the Windows export default is 3DES/SHA-1 (maintainer). Closed —
+  `ReadAsync_lists_a_key_shrouded_under_3DES_and_SHA1_and_warns_once_across_two_reads`, `ReadAsync_lists_a_key_stored_without_encryption_and_warns_once_across_two_reads`, `ReadAsync_does_not_warn_about_a_key_shrouded_under_AES_and_PBKDF2`.
+- The warning carries the path, the weakness and the iteration count; no password or key material. The version hash is taken inside the decode scope, before the buffer wipe.
+- **Accepted residuals (maintainer):** a whitespace-only password is a deliberate value, as for PEM; an unshrouded key bag inside a password-encrypted safe also warns, the safe's own encryption being unjudged.
 ## 2026-10-17 — a host hook forwards an RP's re-authentication demand to an external provider, or the RP is told (#962, code frozen at `5908586`)
 M1 audit finding (Medium, raised independently by the authorize and provider reviewers), the security agent's fix-round review (sign-off, two Lows fixed) and its verification of both fix diffs; no Copilot lens (quota). `d8ec1ed`, `9f6f250`, `b5182a3`, `5908586` read by the security agent; the maintainer reads the PR.
 - A demand is `prompt=login`, or `max_age` with no local session or a session older than it; one rule, `AuthorizationFlow.RequiresReauthentication`, decides it on both dispatch paths. Closed —

@@ -18,15 +18,6 @@ internal static class PemKeyBlocks
     // The tail of every RFC 7468 private key boundary line, encrypted, legacy or plain.
     private const string PrivateKeyMarker = "PRIVATE KEY-----";
 
-    // RFC 8018 §4.2 asks for at least 1000; 2048 is OpenSSL's default.
-    private const int MinimumIterations = 2048;
-
-    private const string Pbes2Oid = "1.2.840.113549.1.5.13";
-    private const string Pbkdf2Oid = "1.2.840.113549.1.5.12";
-
-    private static readonly HashSet<string> AesCbcOids =
-        new(["2.16.840.1.101.3.4.1.2", "2.16.840.1.101.3.4.1.22", "2.16.840.1.101.3.4.1.42"], StringComparer.Ordinal);
-
     private const string Reencrypt = "openssl pkcs8 -topk8 -v2 aes-256-cbc";
 
     /// <summary>
@@ -127,35 +118,16 @@ internal static class PemKeyBlocks
     private static bool IsLegacyEncrypted(ReadOnlySpan<char> pem) =>
         pem.Contains("Proc-Type: 4,ENCRYPTED", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Refuses an <c>EncryptedPrivateKeyInfo</c> (RFC 5958 §3) unless it is PBES2 (RFC 8018 §6.2) with
-    /// PBKDF2 at <see cref="MinimumIterations"/> or more and AES-CBC. PBES1, DES, 3DES and RC2 are legacy
-    /// (RFC 8018 §6.1, Appendix B.2) and brute-forceable offline, which is the exposure the password is for.
-    /// </summary>
+    /// <summary>Refuses an <c>EncryptedPrivateKeyInfo</c> that <see cref="KeyEncryptionStrength"/> judges weak.</summary>
     private static void CheckEncryptionParameters(PemSigningFile file, ReadOnlyMemory<char> base64)
     {
-        // Only the encryption parameters are read: the ciphertext is never decrypted here.
         // PemEncoding.TryFind has already validated the base64, so the decode cannot fail.
         var der = new byte[base64.Length * 3 / 4];
         Convert.TryFromBase64Chars(base64.Span, der, out var written);
+        string? weakness;
         try
         {
-            var algorithm = new AsnReader(der.AsMemory(0, written), AsnEncodingRules.BER).ReadSequence().ReadSequence();
-            if (algorithm.ReadObjectIdentifier() != Pbes2Oid)
-                throw Weak(file, "a PBES1 scheme");
-
-            var pbes2 = algorithm.ReadSequence();
-            var kdf = pbes2.ReadSequence();
-            if (kdf.ReadObjectIdentifier() != Pbkdf2Oid)
-                throw Weak(file, "a key derivation function other than PBKDF2");
-
-            var kdfParameters = kdf.ReadSequence();
-            kdfParameters.ReadEncodedValue();
-            if (!kdfParameters.TryReadInt32(out var iterations) || iterations < MinimumIterations)
-                throw Weak(file, $"fewer than {MinimumIterations} PBKDF2 iterations");
-
-            if (!AesCbcOids.Contains(pbes2.ReadSequence().ReadObjectIdentifier()))
-                throw Weak(file, "a cipher other than AES-CBC");
+            weakness = KeyEncryptionStrength.WeaknessOf(der.AsMemory(0, written));
         }
         catch (AsnContentException ex)
         {
@@ -166,13 +138,16 @@ internal static class PemKeyBlocks
                     $"{ex.GetType().FullName} was thrown. See the inner exception for the root cause."),
                 ex);
         }
+
+        if (weakness is not null)
+            throw Weak(file, weakness);
     }
 
     private static ZeeKayDaConfigurationException Weak(PemSigningFile file, string what) =>
         new(new ZeeKayDaConfigurationFailure(
             "signing.file_signing.weak_key_encryption",
             $"The private key in '{KeyFileOf(file)}' is encrypted with {what}. Only PBES2 with PBKDF2 at " +
-            $"{MinimumIterations} or more iterations and AES-CBC is accepted; re-encrypt it with '{Reencrypt}'."));
+            $"{KeyEncryptionStrength.MinimumIterations} or more iterations and AES-CBC is accepted; re-encrypt it with '{Reencrypt}'."));
 
     private static ZeeKayDaConfigurationException LegacyEncrypted(string path) =>
         new(new ZeeKayDaConfigurationFailure(

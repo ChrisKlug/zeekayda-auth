@@ -59,6 +59,35 @@ internal static class AdversarialPkcs12Factory
     }
 
     /// <summary>
+    /// A single-certificate bundle whose key bag is shrouded under <paramref name="keyPbe"/>, the
+    /// certificate safe and MAC staying strong, so only the key's encryption differs between bundles.
+    /// </summary>
+    public static byte[] KeyShroudedUnder(
+        PbeParameters keyPbe, string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=test-key-shroud", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(notBefore, notAfter);
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        var localKeyId = new byte[] { 0x01 };
+
+        var certificates = new Pkcs12SafeContents();
+        certificates.AddCertificate(publicOnly).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var keys = new Pkcs12SafeContents();
+        keys.AddShroudedKey(key, password, keyPbe).Attributes.Add(new Pkcs9LocalKeyId(localKeyId));
+
+        var builder = new Pkcs12Builder();
+        builder.AddSafeContentsEncrypted(certificates, password, Pbe);
+        builder.AddSafeContentsUnencrypted(keys);
+        builder.SealWithMac(password, HashAlgorithmName.SHA256, 100_000);
+
+        return builder.Encode();
+    }
+
+    /// <summary>
     /// A bundle whose MAC and certificate safe are under <paramref name="password"/> but whose
     /// shrouded key bag is under <paramref name="keyPassword"/>. Reading the certificate succeeds;
     /// importing the key with <paramref name="password"/> fails, so a read that imports the key fails.
@@ -301,6 +330,20 @@ internal static class AdversarialPkcs12Factory
                 keys.AddSafeBag(notAPrivateKey);
                 return notAPrivateKey;
             });
+
+    /// <summary>
+    /// A single-certificate bundle whose RSA key sits in a plain key bag in an unencrypted safe: the
+    /// private key is in cleartext inside the file, guarded only by the MAC.
+    /// </summary>
+    public static byte[] KeyStoredWithoutEncryption(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+                "CN=test-unencrypted-key", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+        return Paired(certificate, password, keys => keys.AddKeyUnencrypted(key));
+    }
 
     /// <summary>
     /// An RSA certificate paired by <c>localKeyId</c> with an EC private key: the certificate the
