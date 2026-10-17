@@ -47,7 +47,7 @@ internal sealed class DataProtectionKeyRepositoryVerifier(
     /// <summary>The check, with the App Service variable passed in so a test need not set it on the process.</summary>
     internal void Verify(StartupVerificationContext context, string? appServiceInstanceId)
     {
-        if (environment.IsDevelopment() || keyManagementOptions.Value.XmlRepository is not null || KeyManagerReplaced())
+        if (environment.IsDevelopment() || HostOwnsKeyStorage())
             return;
 
         if (string.IsNullOrEmpty(appServiceInstanceId))
@@ -55,6 +55,9 @@ internal sealed class DataProtectionKeyRepositoryVerifier(
         else
             context.AddWarning(NotConfiguredCode, AppServiceMessage);
     }
+
+    /// <summary>A configured key repository, or a key manager of the host's own, keeps the default storage out.</summary>
+    private bool HostOwnsKeyStorage() => keyManagementOptions.Value.XmlRepository is not null || KeyManagerReplaced();
 
     /// <summary>
     /// Only Data Protection's own key manager falls back to the default storage. A factory
