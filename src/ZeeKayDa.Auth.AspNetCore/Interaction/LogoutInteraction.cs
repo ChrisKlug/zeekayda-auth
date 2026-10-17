@@ -183,8 +183,8 @@ public sealed class LogoutInteraction
     private async Task ConfirmAsync(HttpContext context, bool allAccounts)
     {
         var request = await ResolveAddressedAsync(context, context.RequestAborted).ConfigureAwait(false);
-        var (sessions, account) = allAccounts
-            ? (await _session.ReadAsync(context).ConfigureAwait(false), (SsoSessionState?)null)
+        (SsoSessionList sessions, SsoSessionState? account) = allAccounts
+            ? (await _session.ReadAsync(context).ConfigureAwait(false), null)
             : await RequireAskedSessionAsync(context, request, context.RequestAborted).ConfigureAwait(false);
 
         var client = request.ClientId is null
