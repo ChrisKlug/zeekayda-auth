@@ -13,8 +13,9 @@ namespace ZeeKayDa.Auth.FileSystem;
 /// <summary>
 /// Lists the configured PFX/PKCS#12 bundles and signs in process with the one the ring chooses.
 /// Listing decrypts no key bag; signing imports the paired key bag into an in-memory key, never an
-/// OS-backed certificate. A key encrypted under weak parameters is still used, since that is what a
-/// default Windows export produces, and warned about once per version of the file.
+/// OS-backed certificate. A key encrypted under weak parameters, or in a key bag with no encryption of
+/// its own, is still used, since that is what a default Windows export produces, and warned about once
+/// per version of the file.
 /// </summary>
 internal sealed class PfxFileSigningKeySource(
     IOptions<PfxFileSigningOptions> options,
@@ -117,25 +118,35 @@ internal sealed class PfxFileSigningKeySource(
         });
     }
 
-    /// <summary>Warns when the key bag is shrouded under weaker parameters than PEM accepts; a refresh of the same file stays quiet.</summary>
+    /// <summary>Warns when the key bag is unshrouded, or shrouded under weaker parameters than PEM accepts; a refresh of the same file stays quiet.</summary>
     private void WarnOfWeakKeyEncryptionOncePerVersion(string path, byte[] bytes, Pkcs12SafeBag keyBag)
     {
         var version = SHA256.HashData(bytes);
         if (_judgedVersions.TryGetValue(path, out var judged) && judged.AsSpan().SequenceEqual(version))
             return;
 
-        if (keyBag is Pkcs12ShroudedKeyBag shrouded
-            && KeyEncryptionStrength.WeaknessOf(shrouded.EncryptedPkcs8PrivateKey) is { } weakness)
+        if (KeyBagWeaknessOf(keyBag) is { } weakness)
         {
             logger.LogWarning(
-                "ZeeKayDa.Auth: {ErrorCode}: the private key in PFX file '{Path}' is encrypted with {Weakness}, " +
-                "which is brute-forceable offline from a copy of the file. It is still used. Re-export the bundle " +
-                "under PBES2 with AES and PBKDF2 at {MinimumIterations} or more iterations: OpenSSL 3's " +
-                "'openssl pkcs12 -export' does by default, as does Export-PfxCertificate -CryptoAlgorithmOption AES256_SHA256.",
+                "ZeeKayDa.Auth: {ErrorCode}: the private key in PFX file '{Path}' {Weakness}. It is still used. " +
+                "Re-export the bundle under PBES2 with AES and PBKDF2 at {MinimumIterations} or more iterations: " +
+                "OpenSSL 3's 'openssl pkcs12 -export' does by default, as does Export-PfxCertificate " +
+                "-CryptoAlgorithmOption AES256_SHA256.",
                 WeakKeyEncryptionCode, path, weakness, KeyEncryptionStrength.MinimumIterations);
         }
 
         _judgedVersions[path] = version;
+    }
+
+    /// <summary>How the key bag's protection falls short, or <see langword="null"/> when it is shrouded strongly enough.</summary>
+    private static string? KeyBagWeaknessOf(Pkcs12SafeBag keyBag)
+    {
+        if (keyBag is not Pkcs12ShroudedKeyBag shrouded)
+            return "is stored in a key bag with no encryption of its own";
+
+        return KeyEncryptionStrength.WeaknessOf(shrouded.EncryptedPkcs8PrivateKey) is { } weakness
+            ? $"is encrypted with {weakness}, which is brute-forceable offline from a copy of the file"
+            : null;
     }
 
     /// <summary>

@@ -332,6 +332,20 @@ internal static class AdversarialPkcs12Factory
             });
 
     /// <summary>
+    /// A single-certificate bundle whose RSA key sits in a plain key bag in an unencrypted safe: the
+    /// private key is in cleartext inside the file, guarded only by the MAC.
+    /// </summary>
+    public static byte[] KeyStoredWithoutEncryption(
+        string password, DateTimeOffset notBefore, DateTimeOffset notAfter)
+    {
+        using var key = RSA.Create(2048);
+        using var certificate = new CertificateRequest(
+                "CN=test-unencrypted-key", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+            .CreateSelfSigned(notBefore, notAfter);
+        return Paired(certificate, password, keys => keys.AddKeyUnencrypted(key));
+    }
+
+    /// <summary>
     /// An RSA certificate paired by <c>localKeyId</c> with an EC private key: the certificate the
     /// listing publishes and the key the signer would import are of different types.
     /// </summary>

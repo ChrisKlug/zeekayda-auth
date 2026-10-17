@@ -179,7 +179,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// </para>
     /// <para>
     /// A private key shrouded under weaker parameters than PBES2 with AES-CBC and PBKDF2 at 2048 or more
-    /// iterations, such as a default Windows export's 3DES and SHA-1, still signs, and logs a
+    /// iterations, such as a default Windows export's 3DES and SHA-1, or not shrouded at all, still signs, and logs a
     /// <c>signing.file_signing.weak_key_encryption</c> warning once per version of the file.
     /// </para>
     /// </remarks>
@@ -229,7 +229,7 @@ public static class ZeeKayDaAuthCoreBuilderFileSigningExtensions
     /// </para>
     /// <para>
     /// A private key shrouded under weaker parameters than PBES2 with AES-CBC and PBKDF2 at 2048 or more
-    /// iterations, such as a default Windows export's 3DES and SHA-1, still signs, and logs a
+    /// iterations, such as a default Windows export's 3DES and SHA-1, or not shrouded at all, still signs, and logs a
     /// <c>signing.file_signing.weak_key_encryption</c> warning once per version of the file.
     /// </para>
     /// <para>

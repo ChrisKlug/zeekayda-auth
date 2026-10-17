@@ -134,6 +134,28 @@ public sealed class PfxFileSigningKeySourceTests
     }
 
     [Fact]
+    public async Task ReadAsync_lists_a_key_stored_without_encryption_and_warns_once_across_two_reads()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var tempDir = new TempSigningKeyDirectory();
+        var path = tempDir.WriteBytes("unencrypted-key.pfx", AdversarialPkcs12Factory.KeyStoredWithoutEncryption(
+            CorrectPassword, T0 - TimeSpan.FromDays(1), T0 + TimeSpan.FromDays(365)));
+        var logger = new CapturingLogger<PfxFileSigningKeySource>();
+        var sut = BuildSource([new PfxFile(path, Password())], logger: logger);
+
+        var first = await sut.ReadAsync(ct);
+        var second = await sut.ReadAsync(ct);
+
+        first.Keys.Should().ContainSingle();
+        second.Keys.Should().ContainSingle();
+        logger.Entries.Should().ContainSingle()
+            .Which.Should().Match<(LogLevel Level, string Message)>(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("signing.file_signing.weak_key_encryption")
+                && entry.Message.Contains(path));
+    }
+
+    [Fact]
     public async Task ReadAsync_does_not_warn_about_a_key_shrouded_under_AES_and_PBKDF2()
     {
         var ct = TestContext.Current.CancellationToken;
