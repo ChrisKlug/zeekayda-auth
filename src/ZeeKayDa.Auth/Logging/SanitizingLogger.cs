@@ -55,6 +55,10 @@ public class SanitizingLogger<T> : ILogger<T>
             "code",
             "DPoP",
 
+            // An ID token presented back as a hint: a signed JWT carrying the user's sub and claims.
+            "id_token_hint",
+            "IdTokenHint",
+
             // Personal data rather than a credential: an email address or phone number.
             "login_hint",
             "LoginHint",

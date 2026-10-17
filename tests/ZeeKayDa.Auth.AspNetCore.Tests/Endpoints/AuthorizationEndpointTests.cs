@@ -231,11 +231,31 @@ public sealed class AuthorizationEndpointTests
     [Fact]
     public async Task A_request_refused_after_it_was_stored_leaves_no_entry_behind()
     {
-        // prompt=none with no session is accepted, stored, and then refused in the same request.
-        // The browser never saw the binding cookie, so the request itself must still be able to
-        // remove what it wrote — otherwise every such request would cost the store an entry for
-        // 30 minutes.
+        // With no login page and no provider the request is stored, then refused in the same
+        // request. The browser never saw the binding cookie, so the request itself must still be
+        // able to remove what it wrote — otherwise every such request would cost the store an entry
+        // for 30 minutes.
         var interactions = new InMemoryInteractionBackingStore(TimeProvider.System);
+        using var host = new EndpointHost(
+            opts => opts.AuthorizationEndpoint.Interaction.LoginPath = null,
+            builder =>
+            {
+                builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
+                    .AddInMemoryRefreshTokenStore(allowOutsideDevelopment: true);
+                builder.Services.AddSingleton<IInteractionBackingStore>(interactions);
+            });
+
+        using var response = await GetAsync(host, ValidQuery());
+
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location!.OriginalString.Should().Contain("error=server_error");
+        interactions.Count.Should().Be(0, "the refused request removed the entry it had just stored");
+    }
+
+    [Fact]
+    public async Task prompt_none_without_a_session_writes_nothing_to_the_store_or_the_cookie_jar()
+    {
+        var interactions = new WriteCountingInteractionStore();
         using var host = new EndpointHost(configureBuilder: builder =>
         {
             builder.AddInMemoryAuthorizationCodeStore(allowOutsideDevelopment: true)
@@ -244,12 +264,16 @@ public sealed class AuthorizationEndpointTests
         });
         var query = ValidQuery();
         query["prompt"] = "none";
+        query["state"] = "opaque-client-state";
 
         using var response = await GetAsync(host, query);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-        response.Headers.Location!.OriginalString.Should().Contain("error=login_required");
-        interactions.Count.Should().Be(0, "the refused request removed the entry it had just stored");
+        var parameters = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
+        parameters["error"].Should().Equal(["login_required"]);
+        parameters["state"].Should().Equal(["opaque-client-state"]);
+        parameters["iss"].Should().Equal(["https://test.example.com"]);
+        interactions.Writes.Should().Be(0);
+        response.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
 
     /// <summary>The interaction identifier the framework put on a redirect to a host page.</summary>
@@ -280,5 +304,25 @@ public sealed class AuthorizationEndpointTests
 
         response.Headers.GetValues("Set-Cookie").Should().ContainSingle(c =>
             c.StartsWith(AuthorizeErrorTransport.CookieName + "=") && c.Contains("httponly"));
+    }
+
+    /// <summary>An in-memory interaction store that counts its writes.</summary>
+    private sealed class WriteCountingInteractionStore : IInteractionBackingStore
+    {
+        private readonly InMemoryInteractionBackingStore _inner = new(TimeProvider.System);
+
+        public int Writes { get; private set; }
+
+        public Task SetAsync(StoreKey key, ReadOnlyMemory<byte> value, DateTimeOffset expiresAt, CancellationToken cancellationToken)
+        {
+            Writes++;
+            return _inner.SetAsync(key, value, expiresAt, cancellationToken);
+        }
+
+        public Task<ReadOnlyMemory<byte>?> GetAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.GetAsync(key, cancellationToken);
+
+        public Task RemoveAsync(StoreKey key, CancellationToken cancellationToken) =>
+            _inner.RemoveAsync(key, cancellationToken);
     }
 }
