@@ -67,7 +67,8 @@ public sealed class LoginRequest
 
     /// <summary>
     /// The subject the client's <c>id_token_hint</c> names, or <see langword="null"/> when it sent
-    /// none. The page is reached with a hint only when the browser holds no account for that user; a
+    /// none. The page is reached with a hint only when no account the browser holds answers it without
+    /// signing in again — there is none for that user, or the client demands a fresh sign-in; a
     /// sign-in as anyone else is refused with <c>login_required</c> at the client (OpenID Connect Core
     /// §3.1.2.2), so a page that would sign in a user it already knows checks this first.
     /// </summary>

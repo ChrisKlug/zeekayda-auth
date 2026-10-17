@@ -40,8 +40,9 @@ public sealed class ProviderChallengeContext
 
     /// <summary>
     /// The subject the client's <c>id_token_hint</c> names, or <see langword="null"/> when it sent
-    /// none. The user is sent to a provider with a hint only when the browser holds no account for
-    /// that user, and a return as anyone else is answered <c>login_required</c> (OpenID Connect Core
+    /// none. The user is sent to a provider with a hint only when no account the browser holds answers
+    /// it without signing in again — there is none for that user, or the client demands a fresh
+    /// sign-in — and a return as anyone else is answered <c>login_required</c> (OpenID Connect Core
     /// §3.1.2.2).
     /// </summary>
     /// <remarks>

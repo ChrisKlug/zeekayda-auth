@@ -42,13 +42,13 @@ internal static class MultiAccountHost
     public const string Bob = "bob";
     public const string Carol = "carol";
 
-    public static void ConfigureOptions(AuthorizationServerOptions options, bool withPicker)
+    public static void ConfigureOptions(AuthorizationServerOptions options, bool withPicker, bool withLogoutPage = true)
     {
         var interaction = options.AuthorizationEndpoint.Interaction;
         interaction.LoginPath = LoginPath;
         interaction.ConsentPath = ConsentPath;
         interaction.SelectAccountPath = withPicker ? SelectPath : null;
-        options.EndSessionEndpoint.LogoutPath = LogoutPath;
+        options.EndSessionEndpoint.LogoutPath = withLogoutPage ? LogoutPath : null;
     }
 
     /// <summary>Two ordinary clients, one that skips the sign-out question, and one that asks for consent.</summary>

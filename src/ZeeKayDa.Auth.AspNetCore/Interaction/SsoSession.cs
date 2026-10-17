@@ -155,9 +155,10 @@ internal sealed class SsoSession(
     }
 
     /// <summary>
-    /// Signs the account in: alone, replacing every account held, or beside them when
-    /// <see cref="SignIn.AddAccount"/> is set. The account keeps its session identifier if the browser
-    /// already held it, and becomes the one <paramref name="clientId"/> is answered for.
+    /// Signs the account in: alone, replacing every account held, or beside them when the sign-in's
+    /// placement adds. The account keeps its session identifier if the browser already held it, takes
+    /// the login identifier this sign-in gave or none, and becomes the one <paramref name="clientId"/>
+    /// is answered for.
     /// </summary>
     public async Task<SsoSessionState> PromoteAsync(HttpContext context, SignIn signIn, string clientId)
     {
@@ -175,10 +176,10 @@ internal sealed class SsoSession(
             Subject = subject,
             AuthTime = timeProvider.GetUtcNow(),
             Amr = [.. signIn.AuthenticationMethods],
-            LoginIdentifier = signIn.LoginIdentifier ?? held?.LoginIdentifier,
+            LoginIdentifier = signIn.Placement.LoginIdentifier,
         };
 
-        var others = signIn.AddAccount ? Without(current.Accounts, account) : [];
+        var others = signIn.Placement.AddAccount ? Without(current.Accounts, account) : [];
         await WriteAsync(context, Trim([account, .. others], [new ClientAccount(clientId, subject), .. current.Clients])).ConfigureAwait(false);
 
         return account;

@@ -478,6 +478,30 @@ public sealed class MultiAccountHostFixture : FlowHostFixture
 }
 
 /// <summary>
+/// The same host as <see cref="MultiAccountHostFixture"/> with no logout page of its own, so the
+/// framework's confirmation page answers a sign-out.
+/// </summary>
+public sealed class MultiAccountFrameworkLogoutHostFixture : FlowHostFixture
+{
+    /// <inheritdoc/>
+    protected override DateTimeOffset StartTime => new(2026, 10, 17, 12, 0, 0, TimeSpan.Zero);
+
+    /// <inheritdoc/>
+    protected override string DefaultBaseAddress => "https://test.example.com";
+
+    /// <inheritdoc/>
+    protected override WebApplicationFactory<TestWebAppFactory> CreateFactory()
+        => new TestWebAppFactory(
+            configureOptions: options => MultiAccountHost.ConfigureOptions(options, withPicker: true, withLogoutPage: false),
+            configureBuilder: builder =>
+            {
+                AddTestDoubles(builder);
+                MultiAccountHost.AddClients(builder);
+            },
+            mapEndpoints: MultiAccountHost.MapHostPages);
+}
+
+/// <summary>
 /// The same host as <see cref="MultiAccountHostFixture"/> with no account picker configured, for the
 /// answer <c>prompt=select_account</c> gets from a server that has none.
 /// </summary>

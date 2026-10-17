@@ -8,16 +8,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal static class SignInArguments
 {
-    /// <summary>
-    /// A local sign-in, its arguments checked in the order the login page's documentation lists
-    /// them, so the first one wrong is the one reported.
-    /// </summary>
+    /// <summary>A local sign-in, its arguments checked and copied.</summary>
     public static SignIn Local(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, bool addAccount)
     {
-        var methods = Methods(authenticationMethods);
         var user = SessionSubject.From(subject);
+        var methods = Methods(authenticationMethods);
 
-        return new SignIn(user, methods, ProviderScheme: null, LoginIdentifier(loginIdentifier), addAccount);
+        return new SignIn(user, methods, ProviderScheme: null, new AccountPlacement(LoginIdentifier(loginIdentifier), addAccount));
     }
 
     /// <summary>
@@ -70,7 +67,4 @@ internal static class SignInArguments
 /// Where a sign-in puts its account among those the browser holds: its login identifier, and
 /// whether it joins them or replaces them.
 /// </summary>
-internal sealed record AccountPlacement(string? LoginIdentifier, bool AddAccount)
-{
-    public static AccountPlacement Replace { get; } = new(LoginIdentifier: null, AddAccount: false);
-}
+internal sealed record AccountPlacement(string? LoginIdentifier, bool AddAccount);

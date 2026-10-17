@@ -153,7 +153,7 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(taken);
 
-        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement.LoginIdentifier, taken.Placement.AddAccount);
+        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
@@ -279,7 +279,8 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         RequireReplaceable(taken, replacement);
 
-        var signIn = new SignIn(replacement, methods, taken.Provider, loginIdentifier ?? taken.Placement.LoginIdentifier, taken.Placement.AddAccount);
+        var placement = taken.Placement with { LoginIdentifier = loginIdentifier ?? taken.Placement.LoginIdentifier };
+        var signIn = new SignIn(replacement, methods, taken.Provider, placement);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 

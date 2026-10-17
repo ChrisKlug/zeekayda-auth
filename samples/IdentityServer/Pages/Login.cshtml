@@ -22,7 +22,7 @@
     @if (Model.SignedInAccounts.Count > 0)
     {
         <label>
-            <input type="checkbox" name="keepOthersSignedIn" value="true" />
+            <input type="checkbox" name="KeepOthersSignedIn" value="true" checked="@Model.KeepOthersSignedIn" />
             Keep @string.Join(", ", Model.SignedInAccounts.Select(account => account.LoginIdentifier)) signed in
         </label>
     }

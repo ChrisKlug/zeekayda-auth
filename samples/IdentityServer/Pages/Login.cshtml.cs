@@ -13,6 +13,10 @@ public sealed class LoginModel(UserStore users, LoginInteraction login) : PageMo
 
     public bool Failed { get; private set; }
 
+    /// <summary>Whether to keep the accounts this browser is already signed in to.</summary>
+    [BindProperty]
+    public bool KeepOthersSignedIn { get; set; }
+
     /// <summary>Who this browser is already signed in as, for the "keep them signed in" choice.</summary>
     public IReadOnlyList<SignedInAccount> SignedInAccounts { get; private set; } = [];
 
@@ -25,7 +29,7 @@ public sealed class LoginModel(UserStore users, LoginInteraction login) : PageMo
         SignedInAccounts = request?.SignedInAccounts ?? [];
     }
 
-    public async Task OnPostAsync(string? password, string? action, bool keepOthersSignedIn)
+    public async Task OnPostAsync(string? password, string? action)
     {
         if (action == "cancel")
         {
@@ -37,8 +41,10 @@ public sealed class LoginModel(UserStore users, LoginInteraction login) : PageMo
 
         if (users.Validate(Username ?? string.Empty, password ?? string.Empty) is not { } user)
         {
-            // Not terminal: the handler ending renders the page again, with the error.
+            // Not terminal: the handler ending renders the page again, with the error, and with
+            // the "keep signed in" choice as the user left it.
             Failed = true;
+            SignedInAccounts = (await login.TryGetRequestAsync(HttpContext.RequestAborted))?.SignedInAccounts ?? [];
             return;
         }
 
@@ -46,7 +52,7 @@ public sealed class LoginModel(UserStore users, LoginInteraction login) : PageMo
         // request, writing the response itself. The username is what the account picker shows, and
         // what a client's login_hint is matched against. Adding keeps the accounts this browser is
         // already signed in to; signing in replaces them, the safe choice on a shared computer.
-        if (keepOthersSignedIn)
+        if (KeepOthersSignedIn)
             await login.AddAccountAsync(user.Subject, AuthenticationMethods.Password, user.Username);
         else
             await login.SignInAsync(user.Subject, AuthenticationMethods.Password, user.Username);

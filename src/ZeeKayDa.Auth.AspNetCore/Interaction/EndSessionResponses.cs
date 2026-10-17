@@ -70,17 +70,30 @@ internal sealed class EndSessionResponses(IOptions<AuthorizationServerOptions> o
             ? Results.Redirect(signedOutPath)
             : Page(StatusCodes.Status200OK, "Signed out", "<h1>You have been signed out.</h1>");
 
-    /// <summary>The framework's confirmation page, whose action-less form posts back with <c>zkd_i</c>.</summary>
-    public static IResult Confirmation(ClientInformation? client)
+    /// <summary>The form field the framework's confirmation page posts, and its value for every account.</summary>
+    public const string ScopeField = "scope";
+
+    /// <inheritdoc cref="ScopeField"/>
+    public const string EveryAccount = "all";
+
+    /// <summary>
+    /// The framework's confirmation page, whose action-less form posts back with <c>zkd_i</c>. With
+    /// more than one account signed in, it also offers to end them all, for a shared computer.
+    /// </summary>
+    public static IResult Confirmation(ClientInformation? client, int signedInAccounts)
     {
         var heading = client?.DisplayName is { } name
             ? $"Sign out of {HtmlEncoder.Default.Encode(name)}?"
             : "Sign out?";
 
+        var everyAccount = signedInAccounts > 1
+            ? $"<button type=\"submit\" name=\"{ScopeField}\" value=\"{EveryAccount}\">Sign out of all accounts</button>"
+            : string.Empty;
+
         return Page(
             StatusCodes.Status200OK,
             "Sign out",
-            $"<h1>{heading}</h1><form method=\"post\"><button type=\"submit\">Sign out</button></form>");
+            $"<h1>{heading}</h1><form method=\"post\"><button type=\"submit\">Sign out</button>{everyAccount}</form>");
     }
 
     /// <summary>A confirmation that names no sign-out this browser is carrying.</summary>

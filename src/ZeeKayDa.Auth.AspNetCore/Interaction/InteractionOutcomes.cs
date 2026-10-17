@@ -459,11 +459,10 @@ internal sealed class InteractionOutcomes(
 
 /// <summary>
 /// What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local
-/// sign-in. <c>AddAccount</c> keeps the accounts the browser holds instead of replacing them.
+/// sign-in, and <c>Placement</c> says whether it joins the accounts the browser holds.
 /// </summary>
 internal sealed record SignIn(
     SessionSubject Subject,
     IReadOnlyList<string> AuthenticationMethods,
     string? ProviderScheme,
-    string? LoginIdentifier = null,
-    bool AddAccount = false);
+    AccountPlacement Placement);

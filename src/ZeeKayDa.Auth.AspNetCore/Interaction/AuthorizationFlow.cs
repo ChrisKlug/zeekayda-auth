@@ -33,17 +33,15 @@ internal sealed class AuthorizationFlow(
 
     /// <summary>
     /// Whether the request must be authenticated before it can continue: no account answers it
-    /// (<see cref="SsoSessionList.Select"/>), the account is another user than the
-    /// <c>id_token_hint</c> names, the client asks for re-authentication with <c>prompt=login</c>, or
-    /// the account authenticated longer ago than the requested <c>max_age</c>.
+    /// (<see cref="SsoSessionList.Select"/>, which already holds it to the <c>id_token_hint</c>), the
+    /// client asks for re-authentication with <c>prompt=login</c>, or the account authenticated longer
+    /// ago than the requested <c>max_age</c>.
     /// </summary>
     public bool NeedsAuthentication(ValidatedAuthorizeRequest request, SsoSessionState? session)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return session is null
-            || !IsRequiredSubject(request.RequiredSubject, session.Subject)
-            || RequiresReauthentication(request.Prompts, request.MaxAge, session);
+        return session is null || RequiresReauthentication(request.Prompts, request.MaxAge, session);
     }
 
     /// <summary>

@@ -13,7 +13,7 @@ public sealed class SsoSessionTests
         await host.EnsureStartedAsync();
         await using var scope = host.Services.CreateAsyncScope();
         var context = host.Get("/sign-in").Build(scope.ServiceProvider);
-        var state = await scope.ServiceProvider.GetRequiredService<SsoSession>().PromoteAsync(context, new SignIn(SessionSubject.From("user-1"), [], ProviderScheme: null), "client-1");
+        var state = await scope.ServiceProvider.GetRequiredService<SsoSession>().PromoteAsync(context, new SignIn(SessionSubject.From("user-1"), [], ProviderScheme: null, new AccountPlacement(LoginIdentifier: null, AddAccount: false)), "client-1");
 
         state.Subject.Should().Be("user-1");
     }

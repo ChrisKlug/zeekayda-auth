@@ -264,6 +264,45 @@ public sealed class SsoSessionAccountsTests : IDisposable
         remembered.Should().StartWith(clientIds[^1]);
     }
 
+    [Fact]
+    public async Task Signing_in_again_without_a_login_identifier_clears_the_one_held()
+    {
+        var browser = NewBrowser();
+        await browser.SignInAsync(Alice, loginIdentifier: "alice@example.com");
+
+        await browser.SignInAsync(Alice);
+
+        (await browser.ReadAsync()).Find(Alice)!.LoginIdentifier.Should().BeNull("each sign-in states the identifier; a stale one would keep matching a login_hint");
+    }
+
+    [Fact]
+    public async Task A_remembered_client_whose_id_contains_a_space_is_read_back_whole()
+    {
+        var browser = NewBrowser();
+
+        await browser.SignInAsync(Alice, clientId: "client with spaces");
+
+        (await browser.ReadAsync()).Clients.Should().ContainSingle()
+            .Which.Should().Be(new ClientAccount("client with spaces", Alice));
+    }
+
+    [Fact]
+    public async Task Lowering_MaxSignedInAccounts_drops_the_least_recently_used_on_read()
+    {
+        var browser = NewBrowser();
+        await browser.SignInAsync(Alice, addAccount: true, clientId: "client-a");
+        browser.Time.Advance(TimeSpan.FromMinutes(1));
+        await browser.SignInAsync(Bob, addAccount: true, clientId: "client-b");
+        browser.Time.Advance(TimeSpan.FromMinutes(1));
+        await browser.SignInAsync(Carol, addAccount: true, clientId: "client-c");
+
+        browser.LimitAccountsTo(2);
+        var sessions = await browser.ReadAsync();
+
+        sessions.Accounts.Select(account => account.Subject).Should().Equal(Carol, Bob);
+        sessions.Clients.Select(client => client.ClientId).Should().Equal("client-c", "client-b");
+    }
+
     // ── Which account answers ─────────────────────────────────────────────────────────────────────
 
     private static SsoSessionState Account(string subject, string? loginIdentifier, DateTimeOffset authTime) => new()
@@ -388,10 +427,14 @@ public sealed class SsoSessionAccountsTests : IDisposable
             string clientId = "client-1") =>
             UseAsync((context, session) => session.PromoteAsync(
                 context,
-                new SignIn(SessionSubject.From(subject), [], ProviderScheme: null, loginIdentifier, addAccount),
+                new SignIn(SessionSubject.From(subject), [], ProviderScheme: null, new AccountPlacement(loginIdentifier, addAccount)),
                 clientId));
 
         public Task<SsoSessionList> ReadAsync() => UseAsync((context, session) => session.ReadAsync(context));
+
+        /// <summary>Lowers the account limit of the running host, as an operator's redeploy with a smaller one would.</summary>
+        public void LimitAccountsTo(int maxSignedInAccounts) =>
+            _host.Resolve<IOptions<AuthorizationServerOptions>>().Value.AuthorizationEndpoint.Interaction.MaxSignedInAccounts = maxSignedInAccounts;
 
         public Task ChooseAsync(string subject, string clientId) =>
             UseAsync(async (context, session) =>

@@ -25,9 +25,11 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// the user is not sent back to the client at all (§4).
 /// </para>
 /// <para>
-/// The user is signed out without being asked only when there is no session to end, or when a
-/// valid <c>id_token_hint</c> names the user of the current session and its client opted out of
-/// the question with <c>SkipLogoutConfirmation</c>. Everything else is confirmed first (§2).
+/// A sign-out ends one account: the one a valid <c>id_token_hint</c> names, or else the one the
+/// client was last answered for. The user is signed out without being asked only when there is
+/// nothing to end — no account at all, or none for the hinted user — or when a valid hint names a
+/// signed-in account and its client opted out of the question with <c>SkipLogoutConfirmation</c>.
+/// Everything else is confirmed first (§2), and the confirmation can end every account instead.
 /// </para>
 /// </remarks>
 internal sealed class EndSessionEndpoint(
@@ -171,14 +173,18 @@ internal sealed class EndSessionEndpoint(
         {
             if (HttpMethods.IsPost(context.Request.Method))
             {
-                await logout.SignOutAsync().ConfigureAwait(false);
+                if (await AsksForEveryAccountAsync(context).ConfigureAwait(false))
+                    await logout.SignOutAllAsync().ConfigureAwait(false);
+                else
+                    await logout.SignOutAsync().ConfigureAwait(false);
+
                 return Results.Empty;
             }
 
             var request = await logout.TryGetRequestAsync(context.RequestAborted).ConfigureAwait(false);
             return request is null
                 ? EndSessionResponses.NothingToConfirm()
-                : EndSessionResponses.Confirmation(request.Client);
+                : EndSessionResponses.Confirmation(request.Client, request.SignedInAccounts.Count);
         }
         catch (ZeeKayDaStoreException ex)
         {
@@ -193,6 +199,11 @@ internal sealed class EndSessionEndpoint(
     /// </summary>
     private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint) =>
         hint is not null && client is { SkipLogoutConfirmation: true };
+
+    /// <summary>Whether the framework's confirmation form was posted with its "every account" button.</summary>
+    private static async ValueTask<bool> AsksForEveryAccountAsync(HttpContext context) =>
+        context.Request.HasFormContentType
+        && (await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false))[EndSessionResponses.ScopeField] == EndSessionResponses.EveryAccount;
 
     private static async ValueTask<Dictionary<string, StringValues>> ReadParametersAsync(HttpContext context)
     {
