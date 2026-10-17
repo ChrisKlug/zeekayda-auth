@@ -8,7 +8,7 @@ namespace ZeeKayDa.Auth.Stores;
 /// <summary>
 /// Warns outside Development when the host configured no Data Protection key repository, since the
 /// stores' protected entries then live in a key ring the runtime's default may lose or not share. A
-/// host that replaced the key manager owns its storage, and is not warned.
+/// host that registered its own key manager type owns its storage, and is not warned.
 /// </summary>
 internal sealed class DataProtectionKeyRepositoryVerifier(
     IOptions<KeyManagementOptions> keyManagementOptions,
@@ -56,7 +56,12 @@ internal sealed class DataProtectionKeyRepositoryVerifier(
             context.AddWarning(NotConfiguredCode, AppServiceMessage);
     }
 
-    /// <summary>Only Data Protection's own key manager falls back to the default storage.</summary>
+    /// <summary>
+    /// Only Data Protection's own key manager falls back to the default storage. A factory
+    /// registration may be wrapping it, so only a named type or instance counts as a replacement.
+    /// </summary>
     private bool KeyManagerReplaced() =>
-        registrations.RegistrationsOf(typeof(IKeyManager)).LastOrDefault()?.ImplementationType != typeof(XmlKeyManager);
+        registrations.RegistrationsOf(typeof(IKeyManager)).LastOrDefault() is { } last
+        && (last.ImplementationType ?? last.ImplementationInstance?.GetType()) is { } type
+        && type != typeof(XmlKeyManager);
 }

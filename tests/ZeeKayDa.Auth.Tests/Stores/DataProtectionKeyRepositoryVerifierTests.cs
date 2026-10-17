@@ -16,6 +16,12 @@ namespace ZeeKayDa.Auth.Tests.Stores;
 /// The startup warning for a host that left the stores' Data Protection key ring on the runtime's
 /// default storage: recorded outside Development, with App Service wording where that default differs.
 /// </summary>
+/// <remarks>
+/// Runs alone: one test sets the App Service variable on the process, which the verifier and Data
+/// Protection itself read.
+/// </remarks>
+[Collection(nameof(DataProtectionKeyRepositoryVerifierTests))]
+[CollectionDefinition(nameof(DataProtectionKeyRepositoryVerifierTests), DisableParallelization = true)]
 public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
 {
     private readonly DirectoryInfo _keyDirectory = Directory.CreateTempSubdirectory("zkda-dp-keys-");
@@ -26,6 +32,19 @@ public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
         public string ApplicationName { get; set; } = "TestApp";
         public string ContentRootPath { get; set; } = "/";
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class ReplacementKeyManager : IKeyManager
+    {
+        public IKey CreateNewKey(DateTimeOffset activationDate, DateTimeOffset expirationDate) => throw new NotSupportedException();
+
+        public IReadOnlyCollection<IKey> GetAllKeys() => throw new NotSupportedException();
+
+        public CancellationToken GetCacheExpirationToken() => throw new NotSupportedException();
+
+        public void RevokeKey(Guid keyId, string? reason = null) => throw new NotSupportedException();
+
+        public void RevokeAllKeys(DateTimeOffset revocationDate, string? reason = null) => throw new NotSupportedException();
     }
 
     private sealed class EmptyXmlRepository : IXmlRepository
@@ -124,11 +143,43 @@ public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
     [Fact]
     public async Task AddZeeKayDaAuthCore_with_a_replaced_key_manager_records_nothing()
     {
-        using var provider = BuildCoreProvider(persistKeys: false, replaceKeyManager: true);
+        using var provider = BuildCoreProvider(
+            persistKeys: false, services => services.AddSingleton<IKeyManager, ReplacementKeyManager>());
 
         var context = await VerifyRegisteredAsync(provider);
 
-        context.Warnings.Should().BeEmpty("a replaced key manager never falls back to the default storage");
+        context.Warnings.Should().BeEmpty("a key manager of the host's own type never falls back to the default storage");
+    }
+
+    [Fact]
+    public async Task AddZeeKayDaAuthCore_with_a_key_manager_built_by_a_factory_still_records_the_warning()
+    {
+        using var provider = BuildCoreProvider(
+            persistKeys: false,
+            services => services.AddSingleton<IKeyManager>(_ => throw new NotSupportedException("Never resolved: only its registration is read.")));
+
+        var context = await VerifyRegisteredAsync(provider);
+
+        context.Warnings.Should().ContainSingle("a factory may be wrapping Data Protection's own key manager")
+            .Which.Code.Should().Be("data_protection.key_repository_not_configured");
+    }
+
+    [Fact]
+    public async Task VerifyAsync_reads_the_App_Service_variable_from_the_process()
+    {
+        using var provider = BuildCoreProvider(persistKeys: false);
+        Environment.SetEnvironmentVariable(DataProtectionKeyRepositoryVerifier.AppServiceInstanceVariable, "a1b2c3");
+        try
+        {
+            var context = await VerifyRegisteredAsync(provider);
+
+            context.Warnings.Should().ContainSingle()
+                .Which.MessageTemplate.Should().Be(DataProtectionKeyRepositoryVerifier.AppServiceMessage);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(DataProtectionKeyRepositoryVerifier.AppServiceInstanceVariable, null);
+        }
     }
 
     [Fact]
@@ -151,15 +202,14 @@ public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
         return context;
     }
 
-    private ServiceProvider BuildCoreProvider(bool persistKeys, bool replaceKeyManager = false)
+    private ServiceProvider BuildCoreProvider(bool persistKeys, Action<IServiceCollection>? registerKeyManager = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
         services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         if (persistKeys)
             services.AddDataProtection().PersistKeysToFileSystem(_keyDirectory);
-        if (replaceKeyManager)
-            services.AddSingleton<IKeyManager>(_ => throw new NotSupportedException("Never resolved: only its registration is read."));
+        registerKeyManager?.Invoke(services);
 
         return services.BuildServiceProvider();
     }

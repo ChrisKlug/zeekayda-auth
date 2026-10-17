@@ -70,8 +70,9 @@ framework must not reveal that a cookie was present but unreadable.
 > multi-instance deployment produces correctness failures at request time — startup only warns — that
 > are difficult to diagnose in production.
 
-Outside the `Development` environment, a host that configures no key repository gets a startup
-warning with code `data_protection.key_repository_not_configured`. On Azure App Service
+Outside the `Development` environment, a host that configures no key repository, and registers no
+`IKeyManager` type of its own, gets a startup warning with code
+`data_protection.key_repository_not_configured`. On Azure App Service
 (`WEBSITE_INSTANCE_ID` set) the warning says why the platform's default key storage is not
 enough: it is shared only by one deployment slot's instances, so a slot swap loses it, and so does
 a Linux custom container without `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true`. The warning clears

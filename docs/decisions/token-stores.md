@@ -105,8 +105,9 @@ liveness check (`now >= ExpiresAt + ClockSkewTolerance`).
 removed from the ring before every token it protected has expired makes those tokens permanently
 undecryptable; because a failed decrypt is fail-closed to `NotFound`, the visible symptom is users
 being logged out with no error at all. Outside Development, a host that configured no key repository
-(`KeyManagementOptions.XmlRepository` null) gets `data_protection.key_repository_not_configured` at
-startup — a warning, since the default can be adequate on a single persistent machine.
+(`KeyManagementOptions.XmlRepository` null) and registered no key manager type of its own gets
+`data_protection.key_repository_not_configured` at startup — a warning, since the default can be
+adequate on a single persistent machine.
 
 **No token store that ships today is a production store; the distributed-cache interaction store
 is.** The in-memory token stores are development and test only. Production means a backend with a
