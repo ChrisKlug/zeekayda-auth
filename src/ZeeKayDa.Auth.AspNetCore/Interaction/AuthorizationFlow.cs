@@ -32,15 +32,24 @@ internal sealed class AuthorizationFlow(
 
     /// <summary>
     /// Whether the request must be authenticated before it can continue: no session at all, a
-    /// client asking for re-authentication with <c>prompt=login</c>, or a session older than the
-    /// requested <c>max_age</c>.
+    /// session for another user than the <c>id_token_hint</c> names, a client asking for
+    /// re-authentication with <c>prompt=login</c>, or a session older than the requested <c>max_age</c>.
     /// </summary>
     public bool NeedsAuthentication(ValidatedAuthorizeRequest request, SsoSessionState? session)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return session is null || RequiresReauthentication(request.Prompts, request.MaxAge, session);
+        return session is null
+            || !IsRequiredSubject(request.RequiredSubject, session.Subject)
+            || RequiresReauthentication(request.Prompts, request.MaxAge, session);
     }
+
+    /// <summary>
+    /// Whether <paramref name="subject"/> may answer a request requiring <paramref name="requiredSubject"/>:
+    /// anyone when the request named no one (OIDC Core §3.1.2.2).
+    /// </summary>
+    public static bool IsRequiredSubject(string? requiredSubject, string? subject) =>
+        requiredSubject is null || string.Equals(subject, requiredSubject, StringComparison.Ordinal);
 
     /// <summary>
     /// Whether the client demands that the user authenticate again: <c>prompt=login</c>, or a
@@ -78,6 +87,7 @@ internal sealed class AuthorizationFlow(
             Prompts = request.Prompts,
             MaxAge = request.MaxAge,
             LoginHint = request.LoginHint,
+            RequiredSubject = request.RequiredSubject,
             IssuedAt = now,
             ExpiresAt = now + AuthorizationRequestContextStore.Lifetime,
             SsoSessionId = session?.SessionId,

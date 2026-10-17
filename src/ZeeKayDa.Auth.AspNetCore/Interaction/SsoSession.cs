@@ -56,7 +56,7 @@ internal sealed class SsoSession(TimeProvider timeProvider)
             return null;
 
         var sessionId = result.Principal.FindFirstValue(SsoSessionClaimTypes.SessionId);
-        var subject = ReadSubject(result.Principal);
+        var subject = SubjectOf(result.Principal);
         if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(subject))
             return null;
 
@@ -82,7 +82,7 @@ internal sealed class SsoSession(TimeProvider timeProvider)
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(authenticationMethods);
 
-        var subject = ReadSubject(principal)
+        var subject = SubjectOf(principal)
             ?? throw new InvalidOperationException("The principal to promote carries no 'sub' claim.");
 
         var current = await ReadAsync(context).ConfigureAwait(false);
@@ -126,7 +126,8 @@ internal sealed class SsoSession(TimeProvider timeProvider)
         return new ClaimsPrincipal(new ClaimsIdentity(claims, ZeeKayDaCookies.Session));
     }
 
-    private static string? ReadSubject(ClaimsPrincipal principal) =>
+    /// <summary>The subject a session for <paramref name="principal"/> would hold, or <see langword="null"/> without one.</summary>
+    public static string? SubjectOf(ClaimsPrincipal principal) =>
         principal.FindFirstValue(SubjectClaimType) is { Length: > 0 } subject ? subject : null;
 
     /// <summary>Reads <c>auth_time</c>; unreadable is infinitely old, so <c>max_age</c> re-authenticates.</summary>

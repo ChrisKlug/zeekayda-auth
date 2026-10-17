@@ -4,9 +4,8 @@
 error model, hands an unauthenticated one to the host's login page or an external provider, an
 authenticated one to the host's consent page, which returns through `ConsentInteraction`, and
 answers a request past both with an authorization code at the registered redirect URI. Remembered
-consent grants are the unbuilt part (#632). Service shapes:
-`docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
-session: `interaction-and-session.md`; the code store: `token-stores.md`.
+consent grants are the unbuilt part. Service shapes: `docs/design/authorization-endpoint-interaction.md`;
+the interaction surface, cookies and SSO session: `interaction-and-session.md`; the code store: `token-stores.md`.
 
 ## Decisions in force
 
@@ -36,11 +35,10 @@ Phase 1 authenticates `client_id` and the `redirect_uri` (shape, exact match, tr
 errors to the client. A phase-1 error renders locally on the error page. Merging them is an
 open-redirect and error-exfiltration hole (RFC 6749 §3.1.2.4, §4.1.2.1).
 
-**No error path ever redirects to an unvalidated URI.** If an interaction context has expired and a
-validated `redirect_uri` cannot be recovered, the local error page is the only safe destination. Where
-one *is* recoverable, redirect to the client with the spec error (`interaction_required`,
-`login_required`, …) rather than showing a dead end. The framework never auto-restarts a flow — the
-relying party decides whether to retry.
+**No error path ever redirects to an unvalidated URI.** An expired interaction context whose
+validated `redirect_uri` cannot be recovered ends on the local error page; where one *is*
+recoverable, the client gets the spec error (`interaction_required`, `login_required`, …) rather than
+a dead end. The framework never auto-restarts a flow — the relying party decides whether to retry.
 
 **PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
 a confidential client whose registration sets `RequirePkce` to `false` may omit `code_challenge`.
@@ -63,6 +61,13 @@ session plus a prior consent grant covering the requested scopes, and otherwise 
 `login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
 **`prompt=select_account` is refused with `account_selection_required`**, with or without a session:
 there is no account picker, and a server that cannot obtain a selection must say so (§3.1.2.1).
+
+**An `id_token_hint` names the only user who may answer** (OIDC Core §3.1.2.2). It must be this
+issuer's ID token, signed by the key ring and issued to the requesting client — lifetime ignored, as
+a hint has usually expired — or it is `invalid_request` at the client. A session for anyone else
+counts as none: `login_required` under `prompt=none`, else the login page; and a sign-in completing
+as anyone else — local, auto-promoted or linked, in derived form — is refused `login_required`
+before the session changes.
 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
@@ -137,13 +142,9 @@ step occurred goes only to clients that opted in (RFC 9700 information disclosur
 
 ## Tried, didn't work
 
-- **Pre-routing interception via `IAuthenticationRequestHandler`** (ADR 0005, accepted and
-  reviewer-signed-off 2026-07-01; reversed 2026-08-28 in the S2 shape conversation before any code).
-  One stated reason was factually wrong (a routed endpoint *can* serve GET and POST — `MapMethods`),
-  the no-`MapZeeKayDaAuth()` ergonomic goal was mooted by the other endpoints requiring mapping
-  anyway, and hiding the request from middleware between `UseAuthentication` and the endpoint
-  protects little — while costing hand-rolled HTTPS/header/rate-limit reimplementation and a
-  meaningless scheme registration. Do not re-propose without new facts; the full analysis is in
-  `docs/design/authorization-endpoint-interaction.md`.
+- **Pre-routing interception via `IAuthenticationRequestHandler`**, reviewer-signed-off, then reversed
+  before any code: a routed endpoint serves GET and POST (`MapMethods`), every other endpoint is mapped
+  anyway, and it would hand-roll HTTPS, header and rate-limit handling and register a meaningless
+  scheme. Do not re-propose without new facts; analysis: `docs/design/authorization-endpoint-interaction.md`.
 - **`nonce` required on every `openid` request.** OIDC Core §3.1.2.1 requires it only where the
   authorization endpoint returns an ID token, and the conformance suite refuses the stricter rule.

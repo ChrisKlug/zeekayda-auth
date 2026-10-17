@@ -35,6 +35,8 @@ internal sealed class InteractionOutcomes(
     /// <summary>What the user is told when the request is larger than the interaction store may hold.</summary>
     internal const string TooLarge = "The authorization request is too large to process.";
 
+    private const string NotTheHintedUser = "The user who signed in is not the user the id_token_hint names.";
+
     /// <summary>An error that must not reach the client: the host's error page, or the framework's minimal one.</summary>
     public IResult LocalError(HttpContext context, string error, string description) =>
         responses.Local(context, error, description);
@@ -120,6 +122,8 @@ internal sealed class InteractionOutcomes(
     /// <summary>
     /// Terminal. Promotes <paramref name="signIn"/> to the SSO session, records it on the
     /// interaction, and continues the flow; the caller has already dealt with anything parked.
+    /// A user other than the one the request's <c>id_token_hint</c> names is refused with
+    /// <c>login_required</c> instead, and the session is left as it was.
     /// </summary>
     public async Task CompleteSignInAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn signIn)
     {
@@ -129,6 +133,14 @@ internal sealed class InteractionOutcomes(
 
         // A client that skips consent gets its code in this response.
         context.Response.Headers.CacheControl = "no-store";
+
+        if (!AuthorizationFlow.IsRequiredSubject(requestContext.RequiredSubject, SsoSession.SubjectOf(signIn.Principal)))
+        {
+            var refusal = await ClientErrorAsync(context, requestContext, AuthorizeRequestErrors.LoginRequired, NotTheHintedUser)
+                .ConfigureAwait(false);
+            await WriteAsync(context, refusal).ConfigureAwait(false);
+            return;
+        }
 
         var state = await flow.PromoteAsync(context, signIn.Principal, signIn.AuthenticationMethods).ConfigureAwait(false);
 
