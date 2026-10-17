@@ -54,7 +54,8 @@ a call made while rendering a GET would decide every request on arrival.
 
 - **Login:** the host verifies the credentials and passes a subject and how the user proved it. The
   framework writes the session; a consent decision from an earlier user on the same interaction is
-  wiped.
+  wiped. Under `prompt=login` or an outlived `max_age` the page is told so, and must have the user
+  authenticate afresh rather than trust a cookie of its own.
 - **Consent:** bound to the browser *and* to the session that signed in, so a different user cannot
   answer. A grant can only narrow what was requested and always includes `openid`. The page cannot
   be framed or cached.

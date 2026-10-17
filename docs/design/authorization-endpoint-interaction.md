@@ -438,7 +438,9 @@ public sealed class LoginInteraction   // singleton over IHttpContextAccessor, a
     // What the page renders: the client (ClientId + optional DisplayName), LocalLoginEnabled,
     // the configured Providers, ProviderReturn — the provider the user just came back from
     // without signing in, Declined or Failed, null on an ordinary arrival — and LoginHint, the
-    // client's login_hint verbatim (at most 256 characters; a hint, never an identity). zkd_i-bound on
+    // client's login_hint verbatim (at most 256 characters; a hint, never an identity), and
+    // ReauthenticationRequired, the verdict the provider challenge hook also gets: when true the
+    // page must authenticate the user afresh, not trust a cookie of its own. zkd_i-bound on
     // SignInAsync's exact terms; stamps the page unframeable and uncacheable, as consent's does.
     // TryGetRequestAsync answers null instead of throwing when there is nothing to sign in for.
     Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);
