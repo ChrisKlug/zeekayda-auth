@@ -128,8 +128,10 @@ complete nothing else. A failed callback for an interaction the browser carries 
 the interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one
 callback-scoped `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With
 no login page only a refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type
-never by message. The session subject of an auto-promoted external principal is derived from provider, claim issuer and upstream
-subject together, never the upstream value: two providers can never share a session, and a subject without an issuer is refused.
+never by message. The session subject of an auto-promoted external principal is derived from claim issuer and upstream subject
+alone, exactly, never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities and
+renaming a registration changes nothing; a subject without an issuer is refused. `ExternalSubject.Derive` is public so a host can
+pre-link accounts; a host choosing other subjects does so in `OnProviderSignIn`, through `SignInWithReplacedAccountAsync`.
 
 **A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login`, or `max_age` and no
 session or an older one, a challenge goes out only when the hook answers `Reauthenticating`, a claim the session's fresh `auth_time` rests on; no hook

@@ -818,7 +818,7 @@ public sealed class RefreshTokenStoreTests
     {
         // A writer to the backing store copies a victim's row, payload and cleartext columns alike,
         // under a handle they hold.
-        var grantStore = new InMemoryRefreshTokenBackingStore();
+        var grantStore = InMemoryStores.RefreshTokens();
         var store = CreateStore(grantStore: grantStore);
         await store.StoreAsync("victim-handle", BuildEntry(clientId: "client-a"), CancellationToken.None);
         var victimGrant = await grantStore.FindByHandleAsync(StoreKey.Hash("refresh", "h", "victim-handle"), CancellationToken.None);
