@@ -264,10 +264,14 @@ public sealed class AuthorizationEndpointTests
         });
         var query = ValidQuery();
         query["prompt"] = "none";
+        query["state"] = "opaque-client-state";
 
         using var response = await GetAsync(host, query);
 
-        response.Headers.Location!.OriginalString.Should().Contain("error=login_required");
+        var parameters = QueryHelpers.ParseQuery(response.Headers.Location!.Query);
+        parameters["error"].Should().Equal(["login_required"]);
+        parameters["state"].Should().Equal(["opaque-client-state"]);
+        parameters["iss"].Should().Equal(["https://test.example.com"]);
         interactions.Writes.Should().Be(0);
         response.Headers.Contains("Set-Cookie").Should().BeFalse();
     }
