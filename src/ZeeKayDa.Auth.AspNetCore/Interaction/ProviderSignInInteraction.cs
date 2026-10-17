@@ -40,8 +40,10 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </para>
 /// <para>
 /// Every refusal of a sign-in is decided before the parked principal is taken, so a refused page
-/// can try again with it still parked. The exception is a principal parked by a second provider
-/// return while the sign-in was in flight: it is held to the same rules, and is gone if refused.
+/// can try again with it still parked. Two exceptions: a principal parked by a second provider
+/// return while the sign-in was in flight is held to the same rules, and is gone if refused; and a
+/// sign-in as anyone but the user the client's <c>id_token_hint</c> names ends the request with
+/// <c>login_required</c> at the client (OpenID Connect Core §3.1.2.2), the interaction with it.
 /// </para>
 /// </remarks>
 public sealed class ProviderSignInInteraction
