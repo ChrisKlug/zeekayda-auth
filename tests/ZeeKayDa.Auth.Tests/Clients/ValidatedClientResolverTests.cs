@@ -130,6 +130,33 @@ public class ValidatedClientResolverTests
         logger.Entries.Should().HaveCount(2).And.OnlyContain(e => e.Level == LogLevel.Critical);
     }
 
+    [Theory]
+    [InlineData("CLIENT-1")]
+    [InlineData("Client-1")]
+    public async Task A_registration_whose_ClientId_differs_ordinally_from_the_looked_up_id_is_served_as_unknown(string lookedUp)
+    {
+        // A repository matching case-insensitively or trimming would otherwise serve the registration
+        // under a spelling the request presented, and bindings made under it would disagree later.
+        var resolver = new ValidatedClientResolver(new MutableRepository(NewClient()), Framework().Validate, NullLogger());
+
+        var result = await resolver.FindClientWithCredentialsAsync(lookedUp, TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_registration_served_under_a_differing_client_id_logs_critical_once_naming_the_mismatch()
+    {
+        var logger = new CapturingSanitizingLogger<ValidatedClientResolver>();
+        var resolver = new ValidatedClientResolver(new MutableRepository(NewClient()), Framework().Validate, logger);
+
+        await resolver.FindClientWithCredentialsAsync("CLIENT-1", TestContext.Current.CancellationToken);
+        await resolver.FindClientWithCredentialsAsync("Client-1", TestContext.Current.CancellationToken);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Critical)
+            .Which.Message.Should().Contain("must match client_id exactly");
+    }
+
     [Fact]
     public async Task Unknown_client_returns_null()
     {
