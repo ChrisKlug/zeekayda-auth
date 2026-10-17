@@ -71,7 +71,7 @@ internal sealed class AuthorizationEndpoint : IZeeKayDaEndpoint
 
     internal async Task<IResult> Handle(AuthorizeRequestValidator validator, HttpContext context)
     {
-        // Codes and errors must never be cached (RFC 6749 §10.12, RFC 9700 §4.16).
+        // Codes and errors must never be cached (RFC 9700 §4.3).
         context.Response.Headers.CacheControl = "no-store";
 
         var parameters = await ExtractParametersAsync(context).ConfigureAwait(false);
