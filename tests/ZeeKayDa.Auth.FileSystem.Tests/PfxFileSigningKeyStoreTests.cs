@@ -35,7 +35,8 @@ public sealed class PfxFileSigningKeyStoreTests
         options.Files.Add(new PfxFile(path, _ => Task.FromResult(Password)));
         var sut = new PfxFileSigningKeySource(
             Options.Create(options),
-            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)));
+            new FileSigningKeyReader(TestSanitizingLogger.Create(NullLogger<FileSigningKeyReader>.Instance)),
+            TestSanitizingLogger.Create(NullLogger<PfxFileSigningKeySource>.Instance));
         var keySet = (await sut.ReadAsync(ct)).Keys;
 
         // Negative control: the snapshot must see the container a certificate-backed load writes,

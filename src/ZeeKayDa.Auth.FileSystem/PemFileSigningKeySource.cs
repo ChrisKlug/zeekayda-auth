@@ -128,7 +128,7 @@ internal sealed class PemFileSigningKeySource(
             return;
 
         _verifiedVersions.TryRemove(file.Path, out _);
-        var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
+        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
         using var withKey = WithDecryptedKey(file, certificate, texts.Key.Span, password);
         _verifiedVersions[file.Path] = version;
     }
@@ -136,21 +136,6 @@ internal sealed class PemFileSigningKeySource(
     // Hashed separately so a byte moving between the two files is still a new version.
     private static byte[] VersionOf(PemSigningFile file, PemTexts texts) =>
         file.KeyPath is null ? texts.Cert.Hash.ToArray() : [.. texts.Cert.Hash, .. texts.Key.Hash];
-
-    /// <summary>
-    /// The configured password. An empty one is <c>password_unavailable</c>: it is most often a missing
-    /// secret bound to <c>""</c>, and a key encrypted under it is a plain key in disguise.
-    /// </summary>
-    private static async Task<string> ReadPasswordAsync(PemSigningFile file, CancellationToken cancellationToken)
-    {
-        var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
-        return password.Length > 0
-            ? password
-            : throw new ZeeKayDaConfigurationException(
-                new ZeeKayDaConfigurationFailure(
-                    "signing.file_signing.password_unavailable",
-                    $"The password source for '{file.Path}' returned an empty password."));
-    }
 
     private static X509Certificate2 ParseCertificate(ReadOnlySpan<char> certPem, string certificatePath)
     {
@@ -229,7 +214,7 @@ internal sealed class PemFileSigningKeySource(
 
         if (file.PasswordSource is not null)
         {
-            var password = await ReadPasswordAsync(file, cancellationToken).ConfigureAwait(false);
+            var password = await SigningFilePassword.ReadAsync(file.Path, file.PasswordSource!, cancellationToken).ConfigureAwait(false);
             using var certificate = ParseCertificate(texts.Cert.Span, file.Path);
             return WithDecryptedKey(file, certificate, texts.Key.Span, password);
         }
