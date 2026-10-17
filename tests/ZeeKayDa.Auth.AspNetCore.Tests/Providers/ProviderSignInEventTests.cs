@@ -241,7 +241,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         resume.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
     }
 
     [Fact]
@@ -338,7 +338,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         signIn.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject), "the upstream subject never enters the session");
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject), "the upstream subject never enters the session");
         session.GetProperty("name").GetString().Should().Be("Upstream User", "the provider's claims come along");
         session.GetProperty("dept").GetString().Should().Be("sales", "the collected claim is added");
         session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
@@ -356,7 +356,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
 
         signIn.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
     }
 
     [Theory]
@@ -611,7 +611,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         signIn.ShouldHaveReachedConsent();
         (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString()
-            .Should().Be(ExternalSubject.Derive("hand", HandWrittenIssuer, HandWrittenSubject), "the later park is what was promoted");
+            .Should().Be(ExternalSubject.Derive(HandWrittenIssuer, HandWrittenSubject), "the later park is what was promoted");
         StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
@@ -958,7 +958,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
         var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
         second.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", "acme", UpstreamSubject));
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
     }
 
     [Fact]

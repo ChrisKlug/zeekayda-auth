@@ -60,8 +60,8 @@ a call made while rendering a GET would decide every request on arrival.
   be framed or cached.
 - **External providers** return to `/connect/resume`. The ticket must name this interaction and the
   provider that was challenged. The host's optional `OnProviderSignIn` hook can let it through, park
-  it for a host page, or deny. The subject is derived from provider, issuer and upstream `sub`, so
-  equal ids at two providers never meet. A parked sign-in finishes as the external user plus
+  it for a host page, or deny. The subject is derived from the issuer and upstream `sub`, so
+  equal ids at two issuers never meet. A parked sign-in finishes as the external user plus
   collected claims, or as a local account the page has proven the user owns; the upstream `sub` is
   refused as that account. Checks run before the parked ticket is taken, so a failed call does not
   use it up.
