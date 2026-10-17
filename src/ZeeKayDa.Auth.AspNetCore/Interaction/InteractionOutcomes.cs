@@ -285,13 +285,21 @@ internal sealed class InteractionOutcomes(
         await CommitAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>What brings the user back to this interaction through <c>/connect/resume</c>.</summary>
+    /// <summary>
+    /// What brings the user back to this interaction through <c>/connect/resume</c>, with the
+    /// ticket lifetime left to the external cookie: these properties become its ticket's.
+    /// </summary>
     private void StampRoundTrip(AuthenticationProperties properties, AuthorizationRequestContext requestContext, ProviderRegistration registration)
     {
         var resume = ResumeEndpoint.RouteFor(EndpointRouteHelper.GetIssuerUri(options));
         properties.RedirectUri = InteractionHandoff.BuildRedirectUrl(resume, requestContext.Id);
         properties.Items[ExternalTicket.InteractionIdItem] = requestContext.Id;
         properties.Items[ExternalTicket.ChallengedProviderItem] = registration.Name;
+
+        properties.IssuedUtc = null;
+        properties.ExpiresUtc = null;
+        properties.IsPersistent = false;
+        properties.AllowRefresh = null;
     }
 
     /// <summary>

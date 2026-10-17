@@ -1,9 +1,11 @@
 using System.Net;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -92,14 +94,35 @@ public sealed class ProviderChallengeHookTests
     /// <summary>Complete the provider's callback for a challenge and return through resume.</summary>
     private static async Task<HttpResponseMessage> ReturnThroughResumeAsync(HttpClient client, HttpResponseMessage challenge)
     {
+        var callback = await CallBackAsync(client, challenge);
+
+        return await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+    }
+
+    /// <summary>Complete the provider's callback for a challenge: the response that writes the external cookie.</summary>
+    private static Task<HttpResponseMessage> CallBackAsync(HttpClient client, HttpResponseMessage challenge)
+    {
         var callbackUrl = QueryHelpers.AddQueryString("/connect/callback/acme", new Dictionary<string, string?>
         {
             ["code"] = "acme-code",
             ["state"] = RedirectQueryOf(challenge)["state"].ToString(),
         });
-        var callback = await client.GetAsync(callbackUrl, Cancellation);
 
-        return await client.GetAsync(callback.Headers.Location!.OriginalString, Cancellation);
+        return client.GetAsync(callbackUrl, Cancellation);
+    }
+
+    /// <summary>The ticket in the external cookie <paramref name="callback"/> wrote, unprotected as its scheme reads it.</summary>
+    private static AuthenticationTicket ExternalTicketOf(TestWebAppFactory factory, HttpResponseMessage callback)
+    {
+        var prefix = ZeeKayDaCookies.External + "=";
+        var value = callback.Headers.GetValues("Set-Cookie")
+            .Single(cookie => cookie.StartsWith(prefix, StringComparison.Ordinal))
+            .Split(';')[0][prefix.Length..];
+        var format = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(ZeeKayDaCookies.External)
+            .TicketDataFormat;
+
+        return format.Unprotect(Uri.UnescapeDataString(value))!;
     }
 
     private static void ShouldHaveAnsweredTheClientWith(HttpResponseMessage response, string error)
@@ -343,5 +366,23 @@ public sealed class ProviderChallengeHookTests
         var resume = await ReturnThroughResumeAsync(host.Client, challenge);
 
         resume.ShouldHaveReachedConsent("the framework re-stamped its items after the hook");
+    }
+
+    [Fact]
+    public async Task A_hook_that_sets_ticket_lifetime_properties_does_not_extend_the_external_cookie()
+    {
+        using var host = new Host(context =>
+        {
+            context.Properties.ExpiresUtc = DateTimeOffset.UtcNow.AddDays(1);
+            context.Properties.IsPersistent = true;
+            return ProviderChallengeOutcome.Proceed;
+        });
+        var challenge = await ChooseProviderAsync(host.Client);
+
+        var callback = await CallBackAsync(host.Client, challenge);
+
+        var ticket = ExternalTicketOf(host.Factory, callback);
+        ticket.Properties.ExpiresUtc.Should().BeOnOrBefore(DateTimeOffset.UtcNow.AddMinutes(5));
+        ticket.Properties.IsPersistent.Should().BeFalse("a persistent cookie would carry the hook's expiry to the browser");
     }
 }
