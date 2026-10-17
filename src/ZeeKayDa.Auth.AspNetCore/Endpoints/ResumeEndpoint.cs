@@ -74,8 +74,19 @@ internal sealed class ResumeEndpoint(
         var (registration, requestContext, principal) = resolved;
         ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
 
+        ExternalIdentity identity;
+        try
+        {
+            identity = ExternalSubject.Identify(registration.Name, principal);
+        }
+        catch (ZeeKayDaInteractionException ex)
+        {
+            return Fail(context, registration, ex);
+        }
+
         // The host gets a snapshot, so a reference it keeps cannot change the session afterwards.
         var signIn = new ProviderSignInContext(
+            identity,
             ReservedClaims.Snapshot(principal),
             registration.Descriptor,
             await flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
@@ -190,7 +201,7 @@ internal sealed class ResumeEndpoint(
             case ZeeKayDaInteractionException interaction:
                 logger.LogError(
                     interaction,
-                    "Signing in through provider {Provider} was refused at promotion.",
+                    "Signing in through provider {Provider} was refused.",
                     registration.Name);
                 break;
 

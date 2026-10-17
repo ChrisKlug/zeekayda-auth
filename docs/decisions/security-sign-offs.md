@@ -1486,7 +1486,9 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
   caller-owned input is snapshotted; terminal calls are POST-only before any read. Closed —
   `SignInAsync_reads_the_parked_principal_to_validate_it_then_takes_it_once`,
   `SignInAsync_promotes_the_principal_parked_at_the_time_of_the_post_not_the_one_the_page_read`,
-  `SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer`,
+  SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer
+  [replaced by #985 with `A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error`:
+  such a principal is now refused before OnProviderSignIn runs, so it is never parked],
   `SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed`
   [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed],
   `A_terminal_call_from_a_GET_is_refused_before_anything_is_read`.
