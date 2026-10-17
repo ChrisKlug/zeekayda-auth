@@ -101,30 +101,49 @@ public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_without_a_key_repository_outside_Development_records_the_warning()
+    public async Task AddZeeKayDaAuthCore_without_a_key_repository_outside_Development_records_the_warning()
     {
         using var provider = BuildCoreProvider(persistKeys: false);
 
-        var context = VerifyRegistered(provider);
+        var context = await VerifyRegisteredAsync(provider);
 
         context.Warnings.Should().ContainSingle()
             .Which.Code.Should().Be("data_protection.key_repository_not_configured");
     }
 
     [Fact]
-    public void AddZeeKayDaAuthCore_with_keys_persisted_to_the_file_system_records_nothing()
+    public async Task AddZeeKayDaAuthCore_with_keys_persisted_to_the_file_system_records_nothing()
     {
         using var provider = BuildCoreProvider(persistKeys: true);
 
-        var context = VerifyRegistered(provider);
+        var context = await VerifyRegisteredAsync(provider);
 
         context.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AddZeeKayDaAuthCore_with_a_replaced_key_manager_records_nothing()
+    {
+        using var provider = BuildCoreProvider(persistKeys: false, replaceKeyManager: true);
+
+        var context = await VerifyRegisteredAsync(provider);
+
+        context.Warnings.Should().BeEmpty("a replaced key manager never falls back to the default storage");
+    }
+
+    [Fact]
+    public void The_App_Service_variable_is_the_one_Data_Protection_reads()
+    {
+        DataProtectionKeyRepositoryVerifier.AppServiceInstanceVariable.Should().Be("WEBSITE_INSTANCE_ID");
     }
 
     private static StartupVerificationContext Verify(string environment, IXmlRepository? xmlRepository, string? appServiceInstanceId)
     {
         var options = new KeyManagementOptions { XmlRepository = xmlRepository };
-        var sut = new DataProtectionKeyRepositoryVerifier(Options.Create(options), new FakeHostEnvironment(environment));
+        var services = new ServiceCollection();
+        services.AddDataProtection();
+        var sut = new DataProtectionKeyRepositoryVerifier(
+            Options.Create(options), new FakeHostEnvironment(environment), new ServiceLifetimeScanner(services));
         var context = new StartupVerificationContext();
 
         sut.Verify(context, appServiceInstanceId);
@@ -132,24 +151,27 @@ public sealed class DataProtectionKeyRepositoryVerifierTests : IDisposable
         return context;
     }
 
-    private ServiceProvider BuildCoreProvider(bool persistKeys)
+    private ServiceProvider BuildCoreProvider(bool persistKeys, bool replaceKeyManager = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment("Production"));
         services.AddZeeKayDaAuthCore(options => options.Issuer = "https://auth.example.com");
         if (persistKeys)
             services.AddDataProtection().PersistKeysToFileSystem(_keyDirectory);
+        if (replaceKeyManager)
+            services.AddSingleton<IKeyManager>(_ => throw new NotSupportedException("Never resolved: only its registration is read."));
 
         return services.BuildServiceProvider();
     }
 
-    private static StartupVerificationContext VerifyRegistered(ServiceProvider provider)
+    /// <summary>Runs the verifier the way the startup runner does, through <see cref="IStartupVerifier.VerifyAsync"/>.</summary>
+    private static async Task<StartupVerificationContext> VerifyRegisteredAsync(ServiceProvider provider)
     {
         using var scope = provider.CreateScope();
-        var sut = scope.ServiceProvider.GetServices<IStartupVerifier>().OfType<DataProtectionKeyRepositoryVerifier>().Should().ContainSingle().Which;
+        IStartupVerifier sut = scope.ServiceProvider.GetServices<IStartupVerifier>().OfType<DataProtectionKeyRepositoryVerifier>().Should().ContainSingle().Which;
         var context = new StartupVerificationContext();
 
-        sut.Verify(context, appServiceInstanceId: null);
+        await sut.VerifyAsync(context, TestContext.Current.CancellationToken);
 
         return context;
     }

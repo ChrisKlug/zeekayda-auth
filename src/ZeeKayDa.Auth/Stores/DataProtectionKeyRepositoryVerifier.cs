@@ -7,11 +7,13 @@ namespace ZeeKayDa.Auth.Stores;
 
 /// <summary>
 /// Warns outside Development when the host configured no Data Protection key repository, since the
-/// stores' protected entries then live in a key ring the runtime's default may lose or not share.
+/// stores' protected entries then live in a key ring the runtime's default may lose or not share. A
+/// host that replaced the key manager owns its storage, and is not warned.
 /// </summary>
 internal sealed class DataProtectionKeyRepositoryVerifier(
     IOptions<KeyManagementOptions> keyManagementOptions,
-    IHostEnvironment environment) : IStartupVerifier
+    IHostEnvironment environment,
+    ServiceLifetimeScanner registrations) : IStartupVerifier
 {
     internal const string NotConfiguredCode = "data_protection.key_repository_not_configured";
 
@@ -45,7 +47,7 @@ internal sealed class DataProtectionKeyRepositoryVerifier(
     /// <summary>The check, with the App Service variable passed in so a test need not set it on the process.</summary>
     internal void Verify(StartupVerificationContext context, string? appServiceInstanceId)
     {
-        if (environment.IsDevelopment() || keyManagementOptions.Value.XmlRepository is not null)
+        if (environment.IsDevelopment() || keyManagementOptions.Value.XmlRepository is not null || KeyManagerReplaced())
             return;
 
         if (string.IsNullOrEmpty(appServiceInstanceId))
@@ -53,4 +55,8 @@ internal sealed class DataProtectionKeyRepositoryVerifier(
         else
             context.AddWarning(NotConfiguredCode, AppServiceMessage);
     }
+
+    /// <summary>Only Data Protection's own key manager falls back to the default storage.</summary>
+    private bool KeyManagerReplaced() =>
+        registrations.RegistrationsOf(typeof(IKeyManager)).LastOrDefault()?.ImplementationType != typeof(XmlKeyManager);
 }
