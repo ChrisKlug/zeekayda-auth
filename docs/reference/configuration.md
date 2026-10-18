@@ -38,10 +38,10 @@ a `ZeeKayDaAuthBuilder` for registering optional features.
 Collections are filled or assigned while the options are configured. Once configuration completes,
 before validation runs, each collection is replaced by a read-only copy of the configured values in
 the configured order, so nothing can change them after validation has approved them. Assigning a
-collection, or any value on the root options, `AuthorizationEndpoint`, `TokenEndpoint`, `Response`
-or `Development`, after that point throws `ZeeKayDaConfigurationException` with the code
-`configuration.options_frozen`, so a `PostConfigure<AuthorizationServerOptions>` registered after
-`AddZeeKayDaAuth` fails startup rather than replacing a validated value.
+collection, or any other value on the options or their groups, after that point throws
+`ZeeKayDaConfigurationException` with the code `configuration.options_frozen`, so a
+`PostConfigure<AuthorizationServerOptions>` registered after `AddZeeKayDaAuth` fails startup rather
+than replacing a validated value.
 
 ## Properties
 
@@ -628,7 +628,7 @@ startup output and host logs.
 | `configuration.discovery_document.cache_max_age.negative` | `DiscoveryDocument.CacheMaxAge` is negative |
 | `configuration.jwks_endpoint.cache_max_age.negative` | `JwksEndpoint.CacheMaxAge` is negative |
 | `configuration.cors_origins.null` | `CorsOrigins` is `null` |
-| `configuration.options_frozen` | a collection was replaced, or a value on a frozen options group set, after configuration finished, e.g. by a `PostConfigure<AuthorizationServerOptions>` registered after `AddZeeKayDaAuth` |
+| `configuration.options_frozen` | a collection was replaced, or any other value set, after configuration finished, e.g. by a `PostConfigure<AuthorizationServerOptions>` registered after `AddZeeKayDaAuth` |
 | `configuration.cors_origins.invalid` | a `CorsOrigins` entry is not a bare `scheme://host[:port]` origin, uses HTTP while `AllowInsecureIssuer` is `false`, or uses HTTP with a non-loopback host |
 | `configuration.security_headers.referrer_policy.undefined_value` | `SecurityHeaders.ReferrerPolicy` is set via an out-of-range cast |
 | `configuration.security_headers.cross_origin_resource_policy.undefined_value` | `SecurityHeaders.CrossOriginResourcePolicy` is set via an out-of-range cast |

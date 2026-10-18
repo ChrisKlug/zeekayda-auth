@@ -129,9 +129,8 @@ public sealed class AuthorizationServerOptions
     public DevelopmentOptions Development { get; } = new();
 
     /// <summary>
-    /// Makes every collection read-only and refuses any later change to these options, to
-    /// <see cref="AuthorizationEndpoint"/>, <see cref="TokenEndpoint"/>, <see cref="Response"/> and
-    /// <see cref="Development"/>.
+    /// Makes every collection read-only and refuses any later change to these options or any of
+    /// their groups.
     /// </summary>
     internal void Freeze()
     {
@@ -140,9 +139,15 @@ public sealed class AuthorizationServerOptions
 
         GrantTypesSupported = FrozenOptions.Copy(GrantTypesSupported);
         CorsOrigins = FrozenOptions.Copy(CorsOrigins);
+        DiscoveryDocument.Freeze();
         AuthorizationEndpoint.Freeze();
+        EndSessionEndpoint.Freeze();
         TokenEndpoint.Freeze();
+        JwksEndpoint.Freeze();
+        SigningKeys.Freeze();
+        UserInfoEndpoint.Freeze();
         Response.Freeze();
+        SecurityHeaders.Freeze();
         Development.Freeze();
         _frozen = true;
     }

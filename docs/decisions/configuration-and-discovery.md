@@ -42,9 +42,8 @@ configuration across two surfaces, do not bind from `IConfiguration`, break
 `GrantTypesSupported` requires `S256` in `AuthorizationEndpoint.CodeChallengeMethodsSupported` — so
 `IValidateOptions<AuthorizationServerOptions>` stays single and grows. It is a pure read-only
 check. An `IPostConfigureOptions<T>` runs earlier and freezes every `ICollection<T>` (public setter)
-to a read-only copy in the host's order, null left null, never rewritten; every setter on the root,
-`AuthorizationEndpoint`, `TokenEndpoint`, `Response` and `Development` then fails with
-`configuration.options_frozen`. The CORS allowlist is derived where used (`CorsAllowlist`).
+to a read-only copy in the host's order, null left null, never rewritten; every setter on the root
+and on each option group then fails with `configuration.options_frozen`. The CORS allowlist is derived where used (`CorsAllowlist`).
 
 **One CORS allowlist, on the root, for every endpoint a browser script calls.** `CorsOrigins` governs
 discovery, JWKS and userinfo alike; none uses a cookie, so who may read one does not vary by endpoint.

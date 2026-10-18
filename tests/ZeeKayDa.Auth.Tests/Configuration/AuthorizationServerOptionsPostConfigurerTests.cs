@@ -289,51 +289,13 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     [Fact]
-    public void Setting_AuthorizationCodeLifetime_after_PostConfigure_fails_with_options_frozen()
+    public void Setting_any_scalar_after_PostConfigure_fails_with_options_frozen()
     {
         var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        var scalars = ScalarProperties(options).ToList();
 
-        var act = () => options.AuthorizationEndpoint.AuthorizationCodeLifetime = TimeSpan.FromHours(1);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
-    }
-
-    [Fact]
-    public void Setting_AccessTokenLifetime_after_PostConfigure_fails_with_options_frozen()
-    {
-        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-
-        var act = () => options.TokenEndpoint.AccessTokenLifetime = TimeSpan.FromDays(365);
-
-        act.Should().Throw<ZeeKayDaConfigurationException>()
-            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
-    }
-
-    [Fact]
-    public void Setting_any_scalar_on_a_frozen_group_after_PostConfigure_fails_with_options_frozen()
-    {
-        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
-        var scalars = FrozenGroups(options)
-            .SelectMany(group => group.Value.GetType().GetProperties()
-                .Where(property => property.CanWrite && CollectionElementType(property.PropertyType) is null)
-                .Select(property => (Path: group.Path + property.Name, Owner: group.Value, Property: property)))
-            .ToList();
-
-        scalars.Select(scalar => scalar.Path).Should().BeEquivalentTo(
-            "Issuer",
-            "ClockSkewTolerance",
-            "AuthorizationEndpoint.Uri",
-            "AuthorizationEndpoint.AuthorizationCodeLifetime",
-            "AuthorizationEndpoint.MaxRequestContextBytes",
-            "TokenEndpoint.Uri",
-            "TokenEndpoint.RefreshTokenLifetime",
-            "TokenEndpoint.AbsoluteFamilyLifetime",
-            "TokenEndpoint.AccessTokenLifetime",
-            "TokenEndpoint.IdTokenLifetime",
-            "Development.AllowHttpLoopbackIssuer",
-            "Development.AllowHttpLoopbackCorsOrigins",
-            "Development.DisableExceptionSanitizing");
+        scalars.Select(scalar => scalar.Path).Should().Contain(
+            ["Issuer", "SigningKeys.RetainRetiredKeysFor", "AuthorizationEndpoint.Interaction.LoginPath"]);
         scalars.Should().AllSatisfy(scalar =>
         {
             var act = () => scalar.Property.SetValue(scalar.Owner, scalar.Property.GetValue(scalar.Owner));
@@ -397,14 +359,24 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         options.CorsOrigins.Should().Equal("HTTPS://APP.EXAMPLE.COM");
     }
 
-    private static IEnumerable<(string Path, object Value)> FrozenGroups(AuthorizationServerOptions options) =>
-    [
-        ("", options),
-        ("AuthorizationEndpoint.", options.AuthorizationEndpoint),
-        ("TokenEndpoint.", options.TokenEndpoint),
-        ("Response.", options.Response),
-        ("Development.", options.Development),
-    ];
+    /// <summary>
+    /// Every settable property that is not a collection, on the options and, recursively, on each
+    /// option group the framework declares, named by its path from the root.
+    /// </summary>
+    private static IEnumerable<ScalarProperty> ScalarProperties(object owner, string prefix = "") =>
+        owner.GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .SelectMany(property => ScalarProperties(owner, property, prefix + property.Name));
+
+    private static IEnumerable<ScalarProperty> ScalarProperties(object owner, PropertyInfo property, string path)
+    {
+        if (!property.CanWrite)
+            return IsOptionGroup(property.PropertyType) && property.GetValue(owner) is { } group
+                ? ScalarProperties(group, path + ".")
+                : [];
+
+        return CollectionElementType(property.PropertyType) is null ? [new ScalarProperty(owner, property, path)] : [];
+    }
 
     /// <summary>
     /// Every property of a generic collection type on the options and, recursively, on each option
@@ -433,6 +405,8 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
     private static bool IsGenericCollection(Type type) =>
         type != typeof(string) && type.IsGenericType && typeof(System.Collections.IEnumerable).IsAssignableFrom(type);
+
+    private sealed record ScalarProperty(object Owner, PropertyInfo Property, string Path);
 
     private sealed record CollectionProperty(object Owner, PropertyInfo Property, string Path, Type ElementType)
     {

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -296,7 +297,7 @@ public sealed class SsoSessionAccountsTests : IDisposable
         browser.Time.Advance(TimeSpan.FromMinutes(1));
         await browser.SignInAsync(Carol, addAccount: true, clientId: "client-c");
 
-        browser.LimitAccountsTo(2);
+        browser.RedeployWithAccountLimit(2);
         var sessions = await browser.ReadAsync();
 
         sessions.Accounts.Select(account => account.Subject).Should().Equal(Carol, Bob);
@@ -393,19 +394,14 @@ public sealed class SsoSessionAccountsTests : IDisposable
     /// </summary>
     private sealed class BrowserWithSession : IDisposable
     {
-        private readonly EndpointHost _host;
+        private readonly EphemeralDataProtectionProvider _keyRing = new();
         private readonly Dictionary<string, string> _cookies = new(StringComparer.Ordinal);
+        private EndpointHost _host;
 
         public BrowserWithSession(int? maxSignedInAccounts)
         {
             Time = new FakeTimeProvider(Start);
-            _host = new EndpointHost(
-                options =>
-                {
-                    if (maxSignedInAccounts is { } max)
-                        options.AuthorizationEndpoint.Interaction.MaxSignedInAccounts = max;
-                },
-                builder => builder.Services.AddSingleton<TimeProvider>(Time));
+            _host = StartHost(maxSignedInAccounts);
         }
 
         public FakeTimeProvider Time { get; }
@@ -432,9 +428,12 @@ public sealed class SsoSessionAccountsTests : IDisposable
 
         public Task<SsoSessionList> ReadAsync() => UseAsync((context, session) => session.ReadAsync(context));
 
-        /// <summary>Lowers the account limit of the running host, as an operator's redeploy with a smaller one would.</summary>
-        public void LimitAccountsTo(int maxSignedInAccounts) =>
-            _host.Resolve<IOptions<AuthorizationServerOptions>>().Value.AuthorizationEndpoint.Interaction.MaxSignedInAccounts = maxSignedInAccounts;
+        /// <summary>Replaces the host with one holding a different account limit, keeping the cookies, clock and key ring.</summary>
+        public void RedeployWithAccountLimit(int maxSignedInAccounts)
+        {
+            _host.Dispose();
+            _host = StartHost(maxSignedInAccounts);
+        }
 
         public Task ChooseAsync(string subject, string clientId) =>
             UseAsync(async (context, session) =>
@@ -457,6 +456,16 @@ public sealed class SsoSessionAccountsTests : IDisposable
         /// <summary>When the session ticket in the cookie expires.</summary>
         public Task<DateTimeOffset?> TicketExpiryAsync() =>
             UseAsync(async (context, _) => (await context.AuthenticateAsync(ZeeKayDaCookies.Session)).Properties?.ExpiresUtc);
+
+        private EndpointHost StartHost(int? maxSignedInAccounts) => new(
+            options =>
+            {
+                if (maxSignedInAccounts is { } max)
+                    options.AuthorizationEndpoint.Interaction.MaxSignedInAccounts = max;
+            },
+            builder => builder.Services
+                .AddSingleton<TimeProvider>(Time)
+                .AddSingleton<IDataProtectionProvider>(_keyRing));
 
         private async Task<T> UseAsync<T>(Func<HttpContext, SsoSession, Task<T>> action)
         {

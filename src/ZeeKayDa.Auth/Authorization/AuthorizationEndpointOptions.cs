@@ -73,6 +73,7 @@ public sealed class AuthorizationEndpointOptions
             return;
 
         CodeChallengeMethodsSupported = FrozenOptions.Copy(CodeChallengeMethodsSupported);
+        Interaction.Freeze();
         _frozen = true;
     }
 }

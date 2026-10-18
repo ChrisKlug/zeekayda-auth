@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.Configuration;
+
 namespace ZeeKayDa.Auth.Tokens;
 
 /// <summary>
@@ -5,6 +7,11 @@ namespace ZeeKayDa.Auth.Tokens;
 /// </summary>
 public sealed class SigningKeyOptions
 {
+    private TimeSpan _leadTime = TimeSpan.FromDays(1);
+    private TimeSpan _refreshInterval = TimeSpan.FromMinutes(5);
+    private TimeSpan? _retainRetiredKeysFor;
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets how long a new key is published before it signs. Defaults to one day.
     /// </summary>
@@ -14,7 +21,11 @@ public sealed class SigningKeyOptions
     /// parties that ignore the JWKS <c>Cache-Control</c> header. Must be greater than zero, and not shorter
     /// than <see cref="Discovery.JwksEndpointOptions.CacheMaxAge"/> plus <see cref="RefreshInterval"/>.
     /// </remarks>
-    public TimeSpan LeadTime { get; set; } = TimeSpan.FromDays(1);
+    public TimeSpan LeadTime
+    {
+        get => _leadTime;
+        set => _leadTime = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.SigningKeys.LeadTime");
+    }
 
     /// <summary>
     /// Gets or sets how often the signing key source is read again. Defaults to five minutes.
@@ -24,7 +35,11 @@ public sealed class SigningKeyOptions
     /// published for the lead time when it signs; a key removed stops signing and is unpublished
     /// within it. Must be at least one minute.
     /// </remarks>
-    public TimeSpan RefreshInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan RefreshInterval
+    {
+        get => _refreshInterval;
+        set => _refreshInterval = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.SigningKeys.RefreshInterval");
+    }
 
     /// <summary>The shortest <see cref="RefreshInterval"/> accepted.</summary>
     internal static readonly TimeSpan MinimumRefreshInterval = TimeSpan.FromMinutes(1);
@@ -44,7 +59,11 @@ public sealed class SigningKeyOptions
     /// from a database, so raise it to match. The two-day floor gives a replica whose handover is slow or fails
     /// time to be fixed while its old key still verifies. A value below the default logs a Warning at startup.
     /// </remarks>
-    public TimeSpan? RetainRetiredKeysFor { get; set; }
+    public TimeSpan? RetainRetiredKeysFor
+    {
+        get => _retainRetiredKeysFor;
+        set => _retainRetiredKeysFor = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.SigningKeys.RetainRetiredKeysFor");
+    }
 
     /// <summary>
     /// The value <see cref="RetainRetiredKeysFor"/> takes when it is not set: the longer server-wide
@@ -59,4 +78,7 @@ public sealed class SigningKeyOptions
             options.ClockSkewTolerance);
         return tokens > MinimumDefaultRetention ? tokens : MinimumDefaultRetention;
     }
+
+    /// <summary>Refuses any later change to these options.</summary>
+    internal void Freeze() => _frozen = true;
 }
