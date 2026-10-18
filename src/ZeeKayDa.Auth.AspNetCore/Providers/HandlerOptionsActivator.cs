@@ -43,13 +43,9 @@ internal sealed class HandlerOptionsActivator(
                 failures.AddRange(failed.Failures);
                 causes.Add(failed.Cause);
             }
-            else if (options is OAuthOptions oauth)
+            else if (options is OAuthOptions oauth && VerifyOAuth(context, registration.Name, oauth) is { } failure)
             {
-                if (string.IsNullOrWhiteSpace(oauth.ClaimsIssuer))
-                    failures.Add(ClaimsIssuerRequired(registration.Name));
-
-                if (!oauth.UsePkce)
-                    WarnNoCodeInjectionProtection(context, registration.Name);
+                failures.Add(failure);
             }
         }
 
@@ -98,6 +94,15 @@ internal sealed class HandlerOptionsActivator(
                 ],
                 ex);
         }
+    }
+
+    /// <summary>Warns about an OAuth provider without PKCE; the failure for one with no <c>ClaimsIssuer</c>, else <see langword="null"/>.</summary>
+    private static ZeeKayDaConfigurationFailure? VerifyOAuth(StartupVerificationContext context, string name, OAuthOptions oauth)
+    {
+        if (!oauth.UsePkce)
+            WarnNoCodeInjectionProtection(context, name);
+
+        return string.IsNullOrWhiteSpace(oauth.ClaimsIssuer) ? ClaimsIssuerRequired(name) : null;
     }
 
     /// <summary>
