@@ -95,7 +95,7 @@ internal sealed class HandlerOptionsActivator(
         }
     }
 
-    /// <summary>RFC 9700 §2.1.1 requires PKCE on the upstream leg; an OAuth handler has no nonce to stand in for it.</summary>
+    /// <summary>RFC 9700 §2.1.1 requires code-injection protection on the upstream leg; with no nonce, an OAuth handler has only PKCE.</summary>
     private static void WarnNoCodeInjectionProtection(StartupVerificationContext context, string name) =>
         context.AddWarning(
             "provider.no_code_injection_protection",
