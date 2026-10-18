@@ -90,6 +90,10 @@ Intended for local development and automated testing only.
 > non-loopback requests with `421 Misdirected Request`. Loopback is determined from the TCP-level
 > `HttpContext.Connection.RemoteIpAddress`, not from the `Host` header.
 >
+> **Behind a TLS-terminating reverse proxy**, the request reaches the application over HTTP and is
+> rejected with `421` until `UseForwardedHeaders()` restores the original scheme from
+> `X-Forwarded-Proto`. That is the fix, not this flag; scope it as the caution below describes.
+>
 > **Reverse-proxy caution:** If the application runs behind a reverse proxy with
 > `UseForwardedHeaders()` configured to trust an unbounded set of proxies, `RemoteIpAddress` can
 > be overwritten from a client-controlled `X-Forwarded-For` value. An attacker could then forge

@@ -66,7 +66,9 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 statusCode: StatusCodes.Status421MisdirectedRequest,
                 title: "HTTPS required",
                 detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
-                        "Configure TLS, or use Development.AllowHttpLoopbackIssuer only for loopback development.");
+                        "Configure TLS. Behind a TLS-terminating reverse proxy, call UseForwardedHeaders() with " +
+                        "KnownProxies or KnownNetworks scoped to the proxy so the original scheme is restored. " +
+                        "Use Development.AllowHttpLoopbackIssuer only for loopback development.");
         });
 
         group.AddEndpointFilter(async (context, next) =>
