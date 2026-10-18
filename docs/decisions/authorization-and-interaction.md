@@ -11,9 +11,9 @@ the interaction surface and cookies: `interaction-and-session.md`; the SSO sessi
 
 **Every ZeeKayDa endpoint is routed — `/connect/authorize` included — and ZeeKayDa is not an
 authentication scheme.** The authorize endpoint and the internal external-return endpoint are
-`IZeeKayDaEndpoint`s mapped by `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/`421` guard,
-security headers, issuer-host constraint and `RequireRateLimiting()` (`endpoints.md`). GET and POST
-via `MapMethods` (OIDC Core §3.1.2.1). The framework registers internal *cookie* schemes and
+`IZeeKayDaEndpoint`s mapped by `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/`421` guard and
+security headers; each adds its issuer-host constraint (`endpoints.md`); rate limiting is the host's. GET and
+POST via `MapMethods` (OIDC Core §3.1.2.1). The framework registers internal *cookie* schemes and
 orchestrates existing handlers; no `AddScheme<ZeeKayDaHandler>` exists. Provider schemes are never
 registered with the host's `AuthenticationOptions`: `WithProviders` replays what the host's callback
 added, keeps it in a framework-owned scheme map, and removes the registration, so the host cannot
@@ -35,10 +35,10 @@ Phase 1 authenticates `client_id` and the `redirect_uri` (shape, exact match, tr
 errors to the client. A phase-1 error renders locally on the error page. Merging them is an
 open-redirect and error-exfiltration hole (RFC 6749 §3.1.2.4, §4.1.2.1).
 
-**No error path ever redirects to an unvalidated URI.** An expired interaction context whose
-validated `redirect_uri` cannot be recovered ends on the local error page; where one *is*
-recoverable, the client gets the spec error (`interaction_required`, `login_required`, …) rather than
-a dead end. The framework never auto-restarts a flow — the relying party decides whether to retry.
+**No error path ever redirects to an unvalidated URI.** An expired or lost interaction never answers
+at `redirect_uri`: the browser goes to the client's registered `InitiateLoginUri` with `iss`, or to the
+local error page (`interaction-and-session.md`). The framework never auto-restarts a flow — the
+relying party decides whether to retry.
 
 **PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
 a confidential client whose registration sets `RequirePkce` to `false` may omit `code_challenge`.
@@ -58,7 +58,7 @@ and discovery says so (`authorization_response_iss_parameter_supported`), since 
 **`prompt=none` never renders interactive UI** (OIDC Core §3.1.2.1) — login or consent inside a
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
-`login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
+`login_required` or `consent_required`.
 **`prompt=select_account` goes to the account picker (`signed-in-accounts.md`), and without one is
 refused `account_selection_required`**: a server that cannot obtain a selection must say so (§3.1.2.1).
 

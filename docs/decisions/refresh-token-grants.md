@@ -2,6 +2,8 @@
 
 Refresh-token-specific rules. The coordinator/backing-store split, `StoreKey`, fail-closed I/O,
 registration policy and the shared options live in `token-stores.md` and apply here unchanged.
+No grant issues or redeems a refresh token yet: only `RevokeFamilyAsync` has a production caller (a
+replayed code), so `StoreAsync`, `FindAsync` and `TryConsumeAsync` are proven by tests alone.
 
 ## Decisions in force
 

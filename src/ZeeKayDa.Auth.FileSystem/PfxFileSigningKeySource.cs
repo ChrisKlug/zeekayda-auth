@@ -12,10 +12,10 @@ namespace ZeeKayDa.Auth.FileSystem;
 
 /// <summary>
 /// Lists the configured PFX/PKCS#12 bundles and signs in process with the one the ring chooses.
-/// Listing decrypts no key bag; signing imports the paired key bag into an in-memory key, never an
-/// OS-backed certificate. A key encrypted under weak parameters, or in a key bag with no encryption of
-/// its own, is still used, since that is what a default Windows export produces, and warned about once
-/// per version of the file.
+/// Listing imports no key and never unshrouds a key bag, though it decrypts a password-protected
+/// safe; signing imports the paired key bag into an in-memory key, never an OS-backed certificate. A
+/// key encrypted under weak parameters, or in a key bag with no encryption of its own, is still used,
+/// since that is what a default Windows export produces, and warned about once per version of the file.
 /// </summary>
 internal sealed class PfxFileSigningKeySource(
     IOptions<PfxFileSigningOptions> options,

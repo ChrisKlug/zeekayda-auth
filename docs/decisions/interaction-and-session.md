@@ -102,10 +102,11 @@ schemes, and removes the configurers, so a provider is absent from the host's `A
 enumerable, not challengeable by name, never dispatched by the middleware. Invisibility is a guarantee rather
 than a convention, which is why a provider name the host also registers as a scheme of its own is a startup
 error and not a shadowing rule. The framework pins every provider's forwarding and each remote handler's
-callback path, sign-in scheme and access-denied path by name, and *asserts* the pins with a validator resolved
-at startup, because a post-configurer registered later would otherwise win silently and send the sign-in to the
-wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
-route is refused for the same reason: the middleware would claim the callback first. A handler that is not an
+callback path, sign-in scheme, access-denied path and `Events.OnAccessDenied` by name, refuses an `EventsType`,
+and wraps `OnRemoteFailure` so the failure is recorded before the host's handler runs. A validator resolved at
+startup *asserts* every pin but that wrap, because a post-configurer registered later would otherwise win silently and send
+the sign-in to the wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback
+path is a provider's route is refused for the same reason: the middleware would claim the callback first. A handler that is not an
 `IAuthenticationRequestHandler` fails startup (nothing could complete its callback); one outside
 `RemoteAuthenticationHandler<>` warns, its callback path and sign-in scheme being the host's to keep. So does an
 `OAuthOptions` one with `UsePkce = false`: it has no nonce to protect its code from injection (RFC 9700 §2.1.1).

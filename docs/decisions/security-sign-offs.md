@@ -2501,3 +2501,16 @@ Issue #1032 (First project), the security agent's review (sign-off, six Lows), t
   `The_consent_page_is_refused_once_the_account_that_authenticated_the_request_was_signed_out_though_another_remains`, `A_confirmation_is_refused_once_the_asked_account_was_signed_out_though_another_account_remains`, `A_valid_hint_from_a_client_that_skips_the_question_ends_only_the_hinted_account`,
   `A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked`, `SignOutAllAsync_ends_the_accounts_that_remain_though_the_asked_one_was_signed_out_since`.
 - **Accepted residuals (maintainer):** under `prompt=none` a registered client learns whether a `login_hint` names an account held here, one guess per request — `Prompt_none_with_a_login_hint_matching_no_account_is_answered_login_required`. A sign-in, picker choice or sign-out racing a sign-out in another tab can write a signed-out account back: the session is the cookie, and those writes are user actions — no test. **Not covered:** telling relying parties of a logout (#994).
+
+## 2026-10-18 — corrections to four earlier entries, found by the M1 audit (#993, no code change; main at `21872ee`)
+
+Appended under this file's rules; the entries corrected stand as written.
+- 2026-09-05 (#85, PR B): the residual naming "the route group's `RequireRateLimiting()`" as the host's control was wrong
+  when written — the route group has never carried it. The host's own rate limiter is the control; whether the framework
+  applies one is #963 — no test.
+- 2026-09-05 (#86): the residual "the login page … is not made unframeable" is closed by #889 — `LoginInteractionTests`'
+  `GetRequestAsync_makes_the_rendered_page_unframeable_and_uncacheable`.
+- 2026-09-11 (#603, PR 3): `IProviderSignInInteraction` became the sealed class `ProviderSignInInteraction` in #878; the
+  scope the entry approved is unchanged.
+- 2026-10-02 (#869): the accepted residual "a throw from `AuthenticateAsync` is an unpadded 500" is closed by #870 —
+  `A_custom_authenticator_throwing_from_AuthenticateAsync_is_a_refusal_padded_like_an_unknown_client`.
