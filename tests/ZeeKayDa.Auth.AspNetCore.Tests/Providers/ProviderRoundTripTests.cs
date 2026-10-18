@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
 using ZeeKayDa.Auth.Stores;
@@ -240,6 +241,41 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         resume.Headers.GetValues("Set-Cookie").Should().Contain(cookie =>
             cookie.StartsWith("zkd.external=") && cookie.Contains("expires=Thu, 01 Jan 1970"));
+    }
+
+    [Fact]
+    public async Task A_handler_that_sets_the_ticket_lifetime_at_callback_does_not_extend_the_external_cookie()
+    {
+        // Whole seconds: a ticket carries its times at that precision.
+        var time = new FakeTimeProvider(DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+
+                // What the OIDC handler does with the ID token's iat and exp under UseTokenLifetime.
+                options.Events.OnTicketReceived = context =>
+                {
+                    context.Properties!.IssuedUtc = time.GetUtcNow().AddHours(-1);
+                    context.Properties.ExpiresUtc = time.GetUtcNow().AddDays(1);
+                    context.Properties.IsPersistent = true;
+                    context.Properties.AllowRefresh = true;
+                    return Task.CompletedTask;
+                };
+            }));
+            builder.Services.AddSingleton<TimeProvider>(time);
+        });
+        using var client = NewClient(factory);
+        var (_, challenge) = await ChallengeAsync(client);
+
+        var callback = await client.GetAsync(CallbackUrlOf(challenge), Cancellation);
+
+        var ticket = ExternalTicketOf(factory, callback);
+        ticket.Properties.IssuedUtc.Should().Be(time.GetUtcNow());
+        ticket.Properties.ExpiresUtc.Should().Be(time.GetUtcNow().AddMinutes(5));
+        ticket.Properties.IsPersistent.Should().BeFalse("a persistent cookie would carry the handler's expiry to the browser");
+        ticket.Properties.AllowRefresh.Should().BeFalse();
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
@@ -24,13 +25,20 @@ internal static class ExternalTicket
     public const string RemoteAuthenticationSchemeItem = ".AuthScheme";
 
     /// <summary>
-    /// The <c>zkd.external</c> sign-in event: records the provider from the callback feature, and
-    /// refuses a sign-in from anywhere but a provider callback endpoint.
+    /// The <c>zkd.external</c> sign-in event: records the provider from the callback feature,
+    /// refuses a sign-in from anywhere but a provider callback endpoint, and fixes the ticket's lifetime.
     /// </summary>
-    public static Task RecordProvider(CookieSigningInContext context)
+    public static Task SigningIn(CookieSigningInContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        RecordProvider(context);
+        StampLifetime(context);
+        return Task.CompletedTask;
+    }
+
+    private static void RecordProvider(CookieSigningInContext context)
+    {
         var feature = context.HttpContext.Features.Get<ProviderCallbackFeature>()
             ?? throw new InvalidOperationException(
                 "Only a provider's callback endpoint may sign into the framework's external scheme. " +
@@ -38,6 +46,19 @@ internal static class ExternalTicket
 
         context.Properties.Items[ProviderItem] = feature.Provider.Name;
         feature.MarkSignedIn();
-        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Last word on the lifetime: the remote handler has already written the properties, as the OIDC
+    /// handler does from the ID token under <c>UseTokenLifetime</c>.
+    /// </summary>
+    private static void StampLifetime(CookieSigningInContext context)
+    {
+        var now = context.HttpContext.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
+
+        context.Properties.IssuedUtc = now;
+        context.Properties.ExpiresUtc = now + context.Options.ExpireTimeSpan;
+        context.Properties.IsPersistent = false;
+        context.Properties.AllowRefresh = false;
     }
 }

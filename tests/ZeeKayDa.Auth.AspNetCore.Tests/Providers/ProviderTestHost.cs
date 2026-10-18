@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -270,6 +271,20 @@ internal static class ProviderTestHost
     {
         var location = response.Headers.Location!.OriginalString;
         return QueryHelpers.ParseQuery(location[location.IndexOf('?')..]);
+    }
+
+    /// <summary>The ticket in the external cookie <paramref name="callback"/> wrote, unprotected as its scheme reads it.</summary>
+    public static AuthenticationTicket ExternalTicketOf(TestWebAppFactory factory, HttpResponseMessage callback)
+    {
+        var prefix = ZeeKayDaCookies.External + "=";
+        var value = callback.Headers.GetValues("Set-Cookie")
+            .Single(cookie => cookie.StartsWith(prefix, StringComparison.Ordinal))
+            .Split(';')[0][prefix.Length..];
+        var format = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(ZeeKayDaCookies.External)
+            .TicketDataFormat;
+
+        return format.Unprotect(Uri.UnescapeDataString(value))!;
     }
 
     /// <summary>Where a redirect points — scheme, authority and path, with the query stripped.</summary>

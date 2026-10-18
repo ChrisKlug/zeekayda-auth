@@ -125,7 +125,7 @@ host can pre-link — never the upstream value: the issuer namespaces the subjec
 **A re-authentication demand — `prompt=login`, or `max_age` with no session or an older one — is one verdict for the login page and providers.** The
 login page reads it as `LoginRequest.ReauthenticationRequired` and must then authenticate the user afresh; fail-closed, a provider is challenged only when
 `OnProviderChallenge` answers `Reauthenticating` — the claim a fresh `auth_time` rests on; no hook or `Proceed` answers `login_required` (OIDC Core
-§3.1.2.1), `Refuse` always does, a throw or `null` answers `server_error`. Round-trip items and ticket lifetime are re-stamped after the hook, so no hook can break the return or lengthen the external cookie.
+§3.1.2.1), `Refuse` always does, a throw or `null` answers `server_error`. Round-trip items are re-stamped after the hook, so no hook can break the return; `zkd.external` sets its ticket's lifetime itself at sign-in, after the handler, so neither a hook nor a handler (OIDC `UseTokenLifetime`) can lengthen it.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an
