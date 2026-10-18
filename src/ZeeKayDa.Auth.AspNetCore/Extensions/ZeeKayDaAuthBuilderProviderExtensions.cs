@@ -44,6 +44,10 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// framework logs. Startup warns about every such provider.
     /// </para>
     /// <para>
+    /// Startup also warns about a provider on <c>OAuthOptions</c> with <c>UsePkce</c> off, which
+    /// leaves its authorization code open to injection. <c>AddOAuth</c> leaves it off; set it.
+    /// </para>
+    /// <para>
     /// The schemes are the framework's: absent from the host's <see cref="AuthenticationOptions"/>,
     /// never challengeable by name. The login page sees them as <c>LoginRequest.Providers</c>.
     /// </para>

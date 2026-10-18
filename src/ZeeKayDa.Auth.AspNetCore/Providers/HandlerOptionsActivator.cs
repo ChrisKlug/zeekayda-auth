@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.Extensions.Options;
 using ZeeKayDa.Auth.StartupVerification;
 
@@ -6,7 +7,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
 /// Resolves every provider's options at startup, so invalid ones — including drift from
-/// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in.
+/// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in, and warns
+/// for an OAuth provider whose code has no injection protection on the upstream leg.
 /// </summary>
 /// <remarks>
 /// An activator, since resolving options runs provider and host code. Failures quote only the
@@ -35,10 +37,14 @@ internal sealed class HandlerOptionsActivator(
             if (HandlerOptions.TypeOf(registration.HandlerType) is not { } optionsType)
                 continue;
 
-            if (Resolve(optionsType, registration.Name) is { } failed)
+            if (Resolve(optionsType, registration.Name, out var options) is { } failed)
             {
                 failures.AddRange(failed.Failures);
                 causes.Add(failed.Cause);
+            }
+            else if (options is OAuthOptions { UsePkce: false })
+            {
+                WarnNoCodeInjectionProtection(context, registration.Name);
             }
         }
 
@@ -49,17 +55,22 @@ internal sealed class HandlerOptionsActivator(
         return Task.CompletedTask;
     }
 
-    /// <summary>Resolves one provider's options: <see langword="null"/> when valid, else the failures and their cause.</summary>
+    /// <summary>
+    /// Resolves one provider's options: <see langword="null"/> and the options when valid, else the
+    /// failures and their cause.
+    /// </summary>
     private (IReadOnlyList<ZeeKayDaConfigurationFailure> Failures, Exception Cause)? Resolve(
         Type optionsType,
-        string name)
+        string name,
+        out object? options)
     {
         // So a resolution that throws before the framework's validator runs reports no stale drift.
         recorder.Clear(name, optionsType);
+        options = null;
 
         try
         {
-            HandlerOptions.Resolve(services, optionsType, name);
+            options = HandlerOptions.Resolve(services, optionsType, name);
             return null;
         }
         catch (OptionsValidationException ex)
@@ -83,6 +94,15 @@ internal sealed class HandlerOptionsActivator(
                 ex);
         }
     }
+
+    /// <summary>RFC 9700 §2.1.1 requires code-injection protection on the upstream leg; with no nonce, an OAuth handler has only PKCE.</summary>
+    private static void WarnNoCodeInjectionProtection(StartupVerificationContext context, string name) =>
+        context.AddWarning(
+            "provider.no_code_injection_protection",
+            "The provider '{Provider}' is an OAuth provider with UsePkce set to false, so the " +
+            "authorization code it returns is not protected against code injection (RFC 9700 " +
+            "section 2.1.1). Set UsePkce to true unless the provider cannot accept PKCE.",
+            name);
 
     /// <summary>
     /// Quotes only the drifts <see cref="PinnedOptionDriftRecorder"/> holds, never text recognised in
