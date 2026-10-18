@@ -1,3 +1,5 @@
+using ZeeKayDa.Auth.Configuration;
+
 namespace ZeeKayDa.Auth.Authorization;
 
 /// <summary>
@@ -5,6 +7,14 @@ namespace ZeeKayDa.Auth.Authorization;
 /// </summary>
 public sealed class InteractionOptions
 {
+    private string? _errorPath;
+    private string? _loginPath = "/login";
+    private string? _consentPath = "/consent";
+    private bool _supportsLocalSignIn = true;
+    private string? _selectAccountPath;
+    private int _maxSignedInAccounts = 5;
+    private bool _frozen;
+
     /// <summary>
     /// Gets or sets the path of the host's error page for authorization errors that cannot be redirected
     /// to the client. When <see langword="null"/> (the default), the framework renders a minimal page.
@@ -13,7 +23,11 @@ public sealed class InteractionOptions
     /// Must be an absolute path within the host application, without scheme, authority, query or fragment. The redirect carries only an opaque error identifier; the page reads the details
     /// through the error interaction service, keeping them out of proxy logs and browser history.
     /// </remarks>
-    public string? ErrorPath { get; set; }
+    public string? ErrorPath
+    {
+        get => _errorPath;
+        set => _errorPath = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ErrorPath");
+    }
 
     /// <summary>
     /// Gets or sets the path of the host's login page, which completes the flow by calling
@@ -30,7 +44,11 @@ public sealed class InteractionOptions
     /// (<c>asp-page</c>, <c>asp-controller</c>) needs <c>asp-route-zkd_i</c>.
     /// </para>
     /// </remarks>
-    public string? LoginPath { get; set; } = "/login";
+    public string? LoginPath
+    {
+        get => _loginPath;
+        set => _loginPath = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.LoginPath");
+    }
 
     /// <summary>
     /// Gets or sets the path of the host's consent page, which completes the flow by calling
@@ -42,7 +60,11 @@ public sealed class InteractionOptions
     /// <see langword="null"/>, a client that requires consent gets <c>server_error</c>; there is no startup
     /// warning, because the framework does not enumerate clients at startup.
     /// </remarks>
-    public string? ConsentPath { get; set; } = "/consent";
+    public string? ConsentPath
+    {
+        get => _consentPath;
+        set => _consentPath = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.ConsentPath");
+    }
 
     /// <summary>
     /// Gets or sets whether the host's login page signs users in itself through
@@ -52,7 +74,11 @@ public sealed class InteractionOptions
     /// <remarks>
     /// With it off and no providers registered, nobody can authenticate, so startup fails.
     /// </remarks>
-    public bool SupportsLocalSignIn { get; set; } = true;
+    public bool SupportsLocalSignIn
+    {
+        get => _supportsLocalSignIn;
+        set => _supportsLocalSignIn = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.SupportsLocalSignIn");
+    }
 
     /// <summary>
     /// Gets or sets the path of the host's account picker, which completes the flow by calling
@@ -67,7 +93,11 @@ public sealed class InteractionOptions
     /// account it holds could answer without signing in again; otherwise the request goes to the
     /// login page.
     /// </remarks>
-    public string? SelectAccountPath { get; set; }
+    public string? SelectAccountPath
+    {
+        get => _selectAccountPath;
+        set => _selectAccountPath = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.SelectAccountPath");
+    }
 
     /// <summary>
     /// Gets or sets how many accounts one browser can be signed in to at once, from 1 to 20. Defaults to 5.
@@ -79,5 +109,12 @@ public sealed class InteractionOptions
     /// is a few hundred bytes of the session cookie, which is why a value above 20 fails at startup: a
     /// larger cookie can be refused as a request header, and the user would get an error on every request.
     /// </remarks>
-    public int MaxSignedInAccounts { get; set; } = 5;
+    public int MaxSignedInAccounts
+    {
+        get => _maxSignedInAccounts;
+        set => _maxSignedInAccounts = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.AuthorizationEndpoint.Interaction.MaxSignedInAccounts");
+    }
+
+    /// <summary>Refuses any later change to these options.</summary>
+    internal void Freeze() => _frozen = true;
 }

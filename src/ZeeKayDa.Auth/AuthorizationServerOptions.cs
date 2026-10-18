@@ -16,6 +16,8 @@ namespace ZeeKayDa.Auth;
 /// </remarks>
 public sealed class AuthorizationServerOptions
 {
+    private string? _issuer;
+    private TimeSpan _clockSkewTolerance = TimeSpan.FromSeconds(5);
     private ICollection<GrantType> _grantTypesSupported = [GrantType.AuthorizationCode];
     private ICollection<string> _corsOrigins = [];
     private bool _frozen;
@@ -26,7 +28,11 @@ public sealed class AuthorizationServerOptions
     /// <remarks>
     /// An absolute HTTPS URI with no query or fragment, published verbatim as the discovery <c>issuer</c>.
     /// </remarks>
-    public string? Issuer { get; set; }
+    public string? Issuer
+    {
+        get => _issuer;
+        set => _issuer = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.Issuer");
+    }
 
     /// <summary>
     /// Gets or sets the one clock-skew grace window applied to every token and authorization code
@@ -36,7 +42,11 @@ public sealed class AuthorizationServerOptions
     /// Must be at least <see cref="TimeSpan.Zero"/> and less than half of
     /// <c>AuthorizationEndpoint.AuthorizationCodeLifetime</c>, or it would nullify code expiry.
     /// </remarks>
-    public TimeSpan ClockSkewTolerance { get; set; } = TimeSpan.FromSeconds(5);
+    public TimeSpan ClockSkewTolerance
+    {
+        get => _clockSkewTolerance;
+        set => _clockSkewTolerance = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.ClockSkewTolerance");
+    }
 
     /// <summary>
     /// Gets or sets the grant types supported by this authorization server.
@@ -119,8 +129,8 @@ public sealed class AuthorizationServerOptions
     public DevelopmentOptions Development { get; } = new();
 
     /// <summary>
-    /// Makes every collection read-only, refuses any later replacement, and fixes the
-    /// <see cref="Development"/> switches.
+    /// Makes every collection read-only and refuses any later change to these options or any of
+    /// their groups.
     /// </summary>
     internal void Freeze()
     {
@@ -129,9 +139,15 @@ public sealed class AuthorizationServerOptions
 
         GrantTypesSupported = FrozenOptions.Copy(GrantTypesSupported);
         CorsOrigins = FrozenOptions.Copy(CorsOrigins);
+        DiscoveryDocument.Freeze();
         AuthorizationEndpoint.Freeze();
+        EndSessionEndpoint.Freeze();
         TokenEndpoint.Freeze();
+        JwksEndpoint.Freeze();
+        SigningKeys.Freeze();
+        UserInfoEndpoint.Freeze();
         Response.Freeze();
+        SecurityHeaders.Freeze();
         Development.Freeze();
         _frozen = true;
     }

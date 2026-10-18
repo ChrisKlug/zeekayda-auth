@@ -31,7 +31,7 @@ public sealed class ResponseOptions
         set => _modesSupported = FrozenOptions.Assign(_frozen, value, "AuthorizationServerOptions.Response.ModesSupported");
     }
 
-    /// <summary>Makes every collection read-only and refuses any later replacement.</summary>
+    /// <summary>Makes every collection read-only and refuses any later change.</summary>
     internal void Freeze()
     {
         if (_frozen)

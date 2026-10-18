@@ -21,11 +21,9 @@ it one group at a time.
 
 **The pipeline.** The host's configuration runs, then `AuthorizationServerOptionsPostConfigurer`
 fills in the one default that depends on other settings and freezes the options: every collection
-becomes read-only and the `Development` switches are fixed, so neither can change after startup
-approved it. Replacing a collection afterwards throws. Scalar settings, such as `Issuer` or a
-lifetime, stay writable. Each group validates itself in its own
-`*OptionsValidation.cs` file, and the root adds the rules that span groups. Every failure carries a
-stable code.
+becomes read-only, and every setter on the root and on each group then throws, so nothing can change
+after startup approved it. Each group validates itself in its own `*OptionsValidation.cs` file, and
+the root adds the rules that span groups. Every failure carries a stable code.
 
 **Validated together.** Every options type registered through `AddZeeKayDaOptions` is validated
 together, so one restart reports every bad setting. The framework does not use `ValidateOnStart()`,

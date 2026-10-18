@@ -274,6 +274,40 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
         });
     }
 
+    // ── Scalars ──────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Setting_Issuer_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+
+        var act = () => options.Issuer = "https://attacker.example.com";
+
+        act.Should().Throw<ZeeKayDaConfigurationException>()
+            .Which.AggregatedFailures.Should().ContainSingle(f => f.Code == "configuration.options_frozen");
+        options.Issuer.Should().Be("https://auth.example.com");
+    }
+
+    [Fact]
+    public void Setting_any_scalar_after_PostConfigure_fails_with_options_frozen()
+    {
+        var options = PostConfigure(new AuthorizationServerOptions { Issuer = "https://auth.example.com" });
+        var scalars = ScalarProperties(options).ToList();
+
+        scalars.Select(scalar => scalar.Path).Should().Contain(
+            ["Issuer", "SigningKeys.RetainRetiredKeysFor", "AuthorizationEndpoint.Interaction.LoginPath"]);
+        scalars.Should().AllSatisfy(scalar =>
+        {
+            var act = () => scalar.Property.SetValue(scalar.Owner, scalar.Property.GetValue(scalar.Owner));
+
+            act.Should().Throw<TargetInvocationException>(scalar.Path)
+                .WithInnerException<ZeeKayDaConfigurationException>()
+                .Which.AggregatedFailures.Should().ContainSingle(f =>
+                    f.Code == "configuration.options_frozen" &&
+                    f.Message.Contains($"AuthorizationServerOptions.{scalar.Path}", StringComparison.Ordinal));
+        });
+    }
+
     // ── Development switches ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -326,6 +360,25 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
     }
 
     /// <summary>
+    /// Every settable property that is not a collection, on the options and, recursively, on each
+    /// option group the framework declares, named by its path from the root.
+    /// </summary>
+    private static IEnumerable<ScalarProperty> ScalarProperties(object owner, string prefix = "") =>
+        owner.GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .SelectMany(property => ScalarProperties(owner, property, prefix + property.Name));
+
+    private static IEnumerable<ScalarProperty> ScalarProperties(object owner, PropertyInfo property, string path)
+    {
+        if (!property.CanWrite)
+            return IsOptionGroup(property.PropertyType) && property.GetValue(owner) is { } group
+                ? ScalarProperties(group, path + ".")
+                : [];
+
+        return CollectionElementType(property.PropertyType) is null ? [new ScalarProperty(owner, property, path)] : [];
+    }
+
+    /// <summary>
     /// Every property of a generic collection type on the options and, recursively, on each option
     /// group the framework declares, named by its path from the root.
     /// </summary>
@@ -352,6 +405,8 @@ public sealed class AuthorizationServerOptionsPostConfigurerTests
 
     private static bool IsGenericCollection(Type type) =>
         type != typeof(string) && type.IsGenericType && typeof(System.Collections.IEnumerable).IsAssignableFrom(type);
+
+    private sealed record ScalarProperty(object Owner, PropertyInfo Property, string Path);
 
     private sealed record CollectionProperty(object Owner, PropertyInfo Property, string Path, Type ElementType)
     {
