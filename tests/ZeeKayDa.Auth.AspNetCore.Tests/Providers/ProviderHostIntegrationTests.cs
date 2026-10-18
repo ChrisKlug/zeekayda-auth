@@ -541,6 +541,47 @@ public sealed class ProviderHostIntegrationTests
                 && entry.Message.Contains(typeof(PlainRequestHandler).FullName!, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void An_OAuth_provider_without_PKCE_starts_with_a_warning_naming_it()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+            builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.UsePkce = false;
+            }));
+        });
+
+        using var client = NewClient(factory);
+
+        logs.Entries.Should().ContainSingle(entry => entry.Message.Contains("provider.no_code_injection_protection", StringComparison.Ordinal))
+            .Which.Should().Match<(string Category, LogLevel Level, string Message)>(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("'acme'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void An_OAuth_provider_with_PKCE_records_no_code_injection_warning()
+    {
+        var logs = new CapturingLoggerProvider();
+        using var factory = NewFactory(configureBuilder: builder =>
+        {
+            builder.Services.AddLogging(logging => logging.AddProvider(logs));
+            builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.UsePkce = true;
+            }));
+        });
+
+        using var client = NewClient(factory);
+
+        logs.Entries.Should().NotContain(entry => entry.Message.Contains("provider.no_code_injection_protection", StringComparison.Ordinal));
+    }
+
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────
 
     [Fact]

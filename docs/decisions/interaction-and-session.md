@@ -107,7 +107,8 @@ at startup, because a post-configurer registered later would otherwise win silen
 wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback path is a provider's
 route is refused for the same reason: the middleware would claim the callback first. A handler that is not an
 `IAuthenticationRequestHandler` fails startup (nothing could complete its callback); one outside
-`RemoteAuthenticationHandler<>` starts with a warning, its callback path and sign-in scheme being the host's to keep.
+`RemoteAuthenticationHandler<>` warns, its callback path and sign-in scheme being the host's to keep. So does an
+`OAuthOptions` one with `UsePkce = false`: it has no nonce to protect its code from injection (RFC 9700 §2.1.1).
 
 **No handler is trusted for provider identity or interaction binding.** The challenge stamps the interaction identifier into the
 properties it hands the handler; the callback endpoint marks the request with the provider its route names before the handler runs;
