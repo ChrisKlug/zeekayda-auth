@@ -67,7 +67,8 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
                 title: "HTTPS required",
                 detail: "ZeeKayDa.Auth endpoints require HTTPS for non-loopback requests. " +
                         "Configure TLS. Behind a TLS-terminating reverse proxy, call UseForwardedHeaders() with " +
-                        "KnownProxies or KnownNetworks scoped to the proxy so the original scheme is restored. " +
+                        "ForwardedHeaders.XForwardedProto enabled and KnownProxies or KnownIPNetworks scoped to the proxy, " +
+                        "so the original scheme is restored. " +
                         "Use Development.AllowHttpLoopbackIssuer only for loopback development.");
         });
 

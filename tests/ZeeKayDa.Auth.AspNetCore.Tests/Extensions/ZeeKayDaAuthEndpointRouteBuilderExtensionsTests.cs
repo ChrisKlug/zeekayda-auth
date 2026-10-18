@@ -216,7 +216,7 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests(EveryRouteHo
         var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
 
         (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
-            .Should().Contain("UseForwardedHeaders()").And.Contain("KnownProxies");
+            .Should().Contain("UseForwardedHeaders()").And.Contain("XForwardedProto").And.Contain("KnownProxies");
     }
 
     // AC2 & AC3: loopback RemoteIpAddress → HTTP allowed regardless of Host
