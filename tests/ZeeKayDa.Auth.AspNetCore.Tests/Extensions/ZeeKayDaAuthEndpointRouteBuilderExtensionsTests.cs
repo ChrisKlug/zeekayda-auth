@@ -207,6 +207,18 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests(EveryRouteHo
         response.StatusCode.Should().Be(HttpStatusCode.MisdirectedRequest);
     }
 
+    [Fact]
+    public async Task HttpsGuard_rejection_names_forwarded_headers_as_the_fix_behind_a_TLS_terminating_proxy()
+    {
+        using var factory = new TestWebAppFactoryWithRemoteIp(IPAddress.Parse("192.0.2.10"));
+        using var client = CreateLoopbackClient(factory);
+
+        var response = await client.GetAsync(DiscoveryPath, TestContext.Current.CancellationToken);
+
+        (await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))
+            .Should().Contain("UseForwardedHeaders()").And.Contain("XForwardedProto").And.Contain("KnownProxies");
+    }
+
     // AC2 & AC3: loopback RemoteIpAddress → HTTP allowed regardless of Host
     [Theory]
     [InlineData("127.0.0.1")]
