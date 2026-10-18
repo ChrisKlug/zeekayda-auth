@@ -182,8 +182,8 @@ log; do sleep 2; done` in a background Bash instead. One `dotnet test` at a time
 this suite collide on ports and key directories.
 
 **Run the tests your change touches, not the project**: change `TokenEndpoint.cs`, run `dotnet test
-… --filter "FullyQualifiedName~TokenEndpoint"` — 20–30s against 158s. Run the whole project once
-before opening a PR, which is what CI gates on anyway.
+… --filter "FullyQualifiedName~TokenEndpoint"` — 20–30s against 158s. The one full run before a PR
+is `/check-code-coverage`, which runs the main test projects; never run the suite beside it.
 
 ## Code navigation
 

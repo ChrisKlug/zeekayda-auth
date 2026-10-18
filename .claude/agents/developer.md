@@ -126,7 +126,8 @@ number, to be sure before reporting — with no edit in between produces the sam
 Runs are minutes each and the maintainer pays for every one.
 
 If you need coverage, formatting and tests, sequence the work so one run serves all three: make every
-edit, then run tests, formatting and coverage once each, then report. If a run reveals a failure, fix
+edit, then run `/check-formatting` and `/check-code-coverage` once each — the coverage check is the
+test run — then report. If a run reveals a failure, fix
 it and run again — that is a run per change, which is correct.
 
 ## Test coverage failures — stop, don't loop

@@ -77,7 +77,9 @@ context; there is no handoff to protect against. Commit locally, do not push, do
 
 The coding standards in `.claude/agents/developer.md` apply to code you write yourself — the
 "Rules that exist because review found them repeatedly" and the API self-check sections especially.
-Run the suite once per change, then `/check-formatting` and `/check-code-coverage` once each.
+While building, run only the tests the change touches (`--filter`). The one full run is
+`/check-code-coverage`: it runs the four main test projects, so it is the suite run as well — never
+run the suite separately before or after it. Then `/check-formatting`.
 
 **Before the review round, check every comment the diff adds.** Read `git diff main -- '*.cs'` for
 added comment lines and put each one in one of three bins: a *why* the code cannot express (keep, in

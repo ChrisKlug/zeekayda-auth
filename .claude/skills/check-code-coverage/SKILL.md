@@ -11,6 +11,13 @@ allowed-tools:
 
 To verify that code coverage hasn't dropped too far, do the following
 
+**This is also the branch's full test run.** Its four `dotnet test` calls are the suite for core,
+AspNetCore and the two provider packages, so never run the suite separately before or after it —
+that runs the same tests twice. Read its `Passed!`/`Failed!` lines like any test run; a failure is
+fixed and this check run again. The samples, conformance host, Windows and analyzer test projects are
+left to CI, unless the change touches `samples/`, `tests/ZeeKayDa.Auth.ConformanceHost`,
+`src/ZeeKayDa.Auth.Windows` or `src/ZeeKayDa.Auth.Analyzers` — then run that test project as well.
+
 ---
 
 
