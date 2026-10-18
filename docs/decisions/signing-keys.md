@@ -52,8 +52,8 @@ newest N, so only their public keys are fetched; too low drops a version whose t
 publish public `Cer` halves only (no `secrets/get`); that version's private key is downloaded once, in
 `CreateSignerAsync`. The secret and the `Cer` are separate reads; the self-test catches a divergence.
 
-**Listing a bundled format imports no private key.** PFX verifies the MAC against the password and takes the
-certificate the key bag's `localKeyId` names — PKCS#12 has no bag ordering; only the chosen bundle's key is imported.
+**Listing a bundled format imports no private key.** PFX verifies the MAC, decrypts a password-protected safe but
+never unshrouds a key bag, and takes the certificate its `localKeyId` names — PKCS#12 has no bag ordering.
 **A PKCS#12 key reaches memory, never a key store.** PFX and cached Key Vault signing import the key bag into an
 in-memory `RSA`/`ECDsa` (PFX: the bag the listing paired). `X509CertificateLoader.LoadPkcs12*`, which would write a
 Windows key container or macOS keychain, is a banned API in both packages.

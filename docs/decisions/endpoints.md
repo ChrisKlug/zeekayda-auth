@@ -96,19 +96,20 @@ isolation. Token responses, success and error alike, carry `no-store` and `Pragm
 6749 §5.1 asks for both, OAuth 2.1 keeps the first, and writing both satisfies either reading.
 
 **The token endpoint is POST-only, mapped unconditionally, and refuses before it reads.** Discovery
-publishes `token_endpoint` unconditionally because RFC 8414 §2 requires it, so the route is mapped
-on the same condition — none — and metadata and route never disagree the way authorize's once did.
-The form is parsed and every shape rule checked, then the server's own grant list consulted, then
-the client authenticated, then its grant allowlist read, before any store is touched: a malformed
-or unauthenticated request costs no I/O and consumes nothing, and a host that stopped serving the
-code grant redeems no code that outlived the change. Only `application/x-www-form-urlencoded` is
-read, and a body the form reader refuses is `invalid_request`, never the host's 500.
-`invalid_client` is `401` with a `WWW-Authenticate` naming the scheme the client used when it sent
-one `Authorization` header (§5.2 MUST) and `400` otherwise; the description never says whether the
-client was unknown or the credential wrong. A server fault is `500` with `server_error`, and a
-`GET` is `405`, not a protocol error. The route allows anonymous access, as the discovery, JWKS,
-resume and provider-callback routes do, so a host's fallback authorization policy cannot pre-empt
-client authentication.
+publishes `token_endpoint` unconditionally because RFC 8414 §2 requires it, so the route is mapped on
+the same condition — none — and metadata and route never disagree the way authorize's once did. The
+form is parsed and every shape rule checked, then the server's own grant list consulted, then the
+client authenticated, then its grant allowlist read, before any store is touched: a malformed or
+unauthenticated request costs no I/O and consumes nothing, and a host that stopped serving the code
+grant redeems no code that outlived the change. Only `application/x-www-form-urlencoded` is read, and
+a body the form reader refuses is `invalid_request`, never the host's 500. `redirect_uri` is required
+on every code exchange, for every client: the stricter RFC 6749 §4.1.3 and OIDC Core §3.1.3.1 form,
+not OAuth 2.1 §4.1.3's leave to omit it. `invalid_client` is `401` with a `WWW-Authenticate` naming
+the scheme the client used when it sent one `Authorization` header (§5.2 MUST) and `400` otherwise;
+the description never says whether the client was unknown or the credential wrong. A server fault is
+`500` with `server_error`, and a `GET` is `405`, not a protocol error. The route allows anonymous
+access, as the discovery, JWKS, resume and provider-callback routes do, so a host's fallback
+authorization policy cannot pre-empt client authentication.
 
 **The end-session endpoint refuses nothing and asks by default.** GET and form POST alike; a
 parameter that fails to validate is ignored, so a bad request lands the user on a confirmation or
@@ -135,9 +136,8 @@ ways at once is `invalid_request`. A separate `OPTIONS` route answers the CORS p
 browser sends before any request carrying an `Authorization` header, with no
 `Access-Control-Allow-Credentials` — which is what keeps the default wildcard origin safe.
 
-**Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were
-mapped and shaped before their implementations landed so discovery stayed stable; the last stub,
-the token route, is gone.
+**Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were mapped and
+shaped before their implementations landed so discovery stayed stable; the last stub is gone.
 
 **The JWKS response is derived lazily from the ring's current key set, keyed by reference
 equality — not maintained by an observer.** Under the read-once ring the body is fixed for the

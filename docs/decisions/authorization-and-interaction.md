@@ -12,7 +12,7 @@ the interaction surface and cookies: `interaction-and-session.md`; the SSO sessi
 **Every ZeeKayDa endpoint is routed — `/connect/authorize` included — and ZeeKayDa is not an
 authentication scheme.** The authorize endpoint and the internal external-return endpoint are
 `IZeeKayDaEndpoint`s mapped by `MapZeeKayDaAuth()`, inheriting the route group's HTTPS/`421` guard,
-security headers, issuer-host constraint and `RequireRateLimiting()` (`endpoints.md`). GET and POST
+security headers and issuer-host constraint (`endpoints.md`); rate limiting is the host's. GET and POST
 via `MapMethods` (OIDC Core §3.1.2.1). The framework registers internal *cookie* schemes and
 orchestrates existing handlers; no `AddScheme<ZeeKayDaHandler>` exists. Provider schemes are never
 registered with the host's `AuthenticationOptions`: `WithProviders` replays what the host's callback
@@ -37,7 +37,7 @@ open-redirect and error-exfiltration hole (RFC 6749 §3.1.2.4, §4.1.2.1).
 
 **No error path ever redirects to an unvalidated URI.** An expired interaction context whose
 validated `redirect_uri` cannot be recovered ends on the local error page; where one *is*
-recoverable, the client gets the spec error (`interaction_required`, `login_required`, …) rather than
+recoverable, the client gets the spec error (`login_required`, …) rather than
 a dead end. The framework never auto-restarts a flow — the relying party decides whether to retry.
 
 **PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
@@ -58,7 +58,7 @@ and discovery says so (`authorization_response_iss_parameter_supported`), since 
 **`prompt=none` never renders interactive UI** (OIDC Core §3.1.2.1) — login or consent inside a
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
-`login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
+`login_required` or `consent_required`.
 **`prompt=select_account` goes to the account picker (`signed-in-accounts.md`), and without one is
 refused `account_selection_required`**: a server that cannot obtain a selection must say so (§3.1.2.1).
 
