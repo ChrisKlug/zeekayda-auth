@@ -283,7 +283,7 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
             options.Cookie.SameSite = SameSiteMode.Lax;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
 
-            options.Events.OnSigningIn = ExternalTicket.RecordProvider;
+            options.Events.OnSigningIn = ExternalTicket.SigningIn;
         });
     }
 

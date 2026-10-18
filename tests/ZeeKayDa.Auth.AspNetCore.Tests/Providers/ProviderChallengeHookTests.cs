@@ -1,11 +1,9 @@
 using System.Net;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using ZeeKayDa.Auth.AspNetCore.Interaction;
 using ZeeKayDa.Auth.AspNetCore.Tests.Interaction;
@@ -109,20 +107,6 @@ public sealed class ProviderChallengeHookTests
         });
 
         return client.GetAsync(callbackUrl, Cancellation);
-    }
-
-    /// <summary>The ticket in the external cookie <paramref name="callback"/> wrote, unprotected as its scheme reads it.</summary>
-    private static AuthenticationTicket ExternalTicketOf(TestWebAppFactory factory, HttpResponseMessage callback)
-    {
-        var prefix = ZeeKayDaCookies.External + "=";
-        var value = callback.Headers.GetValues("Set-Cookie")
-            .Single(cookie => cookie.StartsWith(prefix, StringComparison.Ordinal))
-            .Split(';')[0][prefix.Length..];
-        var format = factory.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
-            .Get(ZeeKayDaCookies.External)
-            .TicketDataFormat;
-
-        return format.Unprotect(Uri.UnescapeDataString(value))!;
     }
 
     private static void ShouldHaveAnsweredTheClientWith(HttpResponseMessage response, string error)
