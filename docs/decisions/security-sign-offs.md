@@ -2514,3 +2514,10 @@ Appended under this file's rules; the entries corrected stand as written.
   scope the entry approved is unchanged.
 - 2026-10-02 (#869): the accepted residual "a throw from `AuthenticateAsync` is an unpadded 500" is closed by #870 —
   `A_custom_authenticator_throwing_from_AuthenticateAsync_is_a_refusal_padded_like_an_unknown_client`.
+
+## 2026-10-18 — the external cookie sets its own ticket lifetime at sign-in, so no handler can lengthen it (#1026, code frozen at `0e1f305`)
+Issue #1026 (First project), the security agent's review (sign-off, no findings) and the Claude code-lens and security-lens stand-ins (no findings); no Copilot lens (quota). `0e1f305` read by all three reviewers; the maintainer reads the PR.
+- `zkd.external`'s sign-in event stamps `IssuedUtc` = now, `ExpiresUtc` = now + `ExpireTimeSpan` (five minutes), `IsPersistent = false` and `AllowRefresh = false` after the remote handler and every host event have written the properties, so neither OIDC `UseTokenLifetime`, another handler, a host ticket event nor `OnProviderChallenge` can lengthen the ticket. Closed —
+  `A_handler_that_sets_the_ticket_lifetime_at_callback_does_not_extend_the_external_cookie` (`OnTicketReceived` stands in for `UseTokenLifetime`, which writes earlier in the same callback), `A_hook_that_sets_ticket_lifetime_properties_does_not_extend_the_external_cookie`.
+- This closes the "Not covered: `OpenIdConnectOptions.UseTokenLifetime`" residual of the 2026-10-17 entry for #962.
+- **Accepted residuals (maintainer):** a host that reconfigures the framework's own cookie through `Configure<CookieAuthenticationOptions>(ZeeKayDaCookies.External)` can replace its events or raise `ExpireTimeSpan`; nothing pins the framework cookies' options, and doing so is a deliberate act by the integrator — no test.
