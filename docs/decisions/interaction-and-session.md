@@ -104,7 +104,7 @@ than a convention, which is why a provider name the host also registers as a sch
 error and not a shadowing rule. The framework pins every provider's forwarding and each remote handler's
 callback path, sign-in scheme, access-denied path and `Events.OnAccessDenied` by name, refuses an `EventsType`,
 and wraps `OnRemoteFailure` so the failure is recorded before the host's handler runs. A validator resolved at
-startup *asserts* the pins, because a post-configurer registered later would otherwise win silently and send
+startup *asserts* every pin but that wrap, because a post-configurer registered later would otherwise win silently and send
 the sign-in to the wrong cookie or the callback to a path nothing serves. A host remote scheme whose callback
 path is a provider's route is refused for the same reason: the middleware would claim the callback first. A handler that is not an
 `IAuthenticationRequestHandler` fails startup (nothing could complete its callback); one outside
