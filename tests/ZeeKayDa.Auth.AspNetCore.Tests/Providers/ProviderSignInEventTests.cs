@@ -208,10 +208,12 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     [Theory]
     [InlineData(null)]
     [InlineData(ClaimsIdentity.DefaultIssuer)]
+    [InlineData("acme")]
+    [InlineData("ACME")]
     public async Task A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error(string? subjectIssuer)
     {
-        // No subject at all, or one carrying the default issuer: nothing to identify the user by,
-        // so the handler cannot park it for a linking page.
+        // No subject at all, or one whose issuer is the default or the registration name: nothing
+        // stable to identify the user by, so the handler cannot park it for a linking page.
         Claim[] returned = subjectIssuer is null
             ? [new Claim("name", "Upstream User", ClaimValueTypes.String, "acme")]
             : [new Claim("sub", UpstreamSubject, ClaimValueTypes.String, subjectIssuer)];
@@ -292,7 +294,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         resume.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]
@@ -370,7 +372,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
 
-        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be("acme");
+        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be(AcmeIssuer);
         pending.GetProperty("identitySubject").GetString().Should().Be(seen.Subject).And.Be(UpstreamSubject);
     }
 
@@ -386,7 +388,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
 
         pending.GetProperty("identities").EnumerateArray().Select(element => element.GetString())
-            .Should().Equal("acme", "acme-directory");
+            .Should().Equal(AcmeIssuer, "acme-directory");
         pending.GetProperty("dept").GetString().Should().Be("sales", "the secondary identity keeps its claims, not only its type");
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
     }
@@ -407,7 +409,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         signIn.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject), "the upstream subject never enters the session");
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject), "the upstream subject never enters the session");
         session.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
             .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount], "the provider's name claim stays out");
         session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
@@ -937,7 +939,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
         var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
         second.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]

@@ -202,7 +202,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         resume.ShouldHaveReachedConsent("the promoted session moves the request on to consent");
         var session = (await ReadSessionAsync(client))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject),
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject),
             "the upstream subject is never used verbatim");
         session.GetProperty("sid").GetString().Should().NotBeNullOrEmpty();
         session.GetProperty("amr").GetArrayLength().Should().Be(0, "the framework was told nothing about how the user authenticated");
@@ -213,8 +213,8 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     {
         Claim[] returned =
         [
-            new("sub", UpstreamSubject, ClaimValueTypes.String, "acme"),
-            .. Enumerable.Range(0, 200).Select(index => new Claim($"claim-{index}", new string('x', 40), ClaimValueTypes.String, "acme")),
+            new("sub", UpstreamSubject, ClaimValueTypes.String, AcmeIssuer),
+            .. Enumerable.Range(0, 200).Select(index => new Claim($"claim-{index}", new string('x', 40), ClaimValueTypes.String, AcmeIssuer)),
         ];
         using var factory = NewFactory(configureBuilder: builder =>
             builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcmeReturning(returned))));
@@ -284,7 +284,11 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
         {
             auth.AddOAuth("acme", ConfigureAcme);
-            auth.AddOAuth("globex", ConfigureAcme);
+            auth.AddOAuth("globex", options =>
+            {
+                ConfigureAcme(options);
+                options.ClaimsIssuer = "https://globex.example.net";
+            });
         }));
         using var throughAcme = NewClient(factory);
         using var throughGlobex = NewClient(factory);
@@ -295,6 +299,25 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         var acmeSubject = (await ReadSessionAsync(throughAcme))!.Value.GetProperty("sub").GetString();
         var globexSubject = (await ReadSessionAsync(throughGlobex))!.Value.GetProperty("sub").GetString();
         acmeSubject.Should().NotBe(globexSubject);
+    }
+
+    [Fact]
+    public async Task Two_registrations_with_one_claims_issuer_give_a_user_the_same_subject_so_a_rename_changes_nothing()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("acme", ConfigureAcme);
+            auth.AddOAuth("acme-renamed", ConfigureAcme);
+        }));
+        using var throughAcme = NewClient(factory);
+        using var throughRenamed = NewClient(factory);
+
+        await RoundTripAsync(throughAcme, "acme");
+        await RoundTripAsync(throughRenamed, "acme-renamed");
+
+        var acmeSubject = (await ReadSessionAsync(throughAcme))!.Value.GetProperty("sub").GetString();
+        var renamedSubject = (await ReadSessionAsync(throughRenamed))!.Value.GetProperty("sub").GetString();
+        renamedSubject.Should().Be(acmeSubject).And.Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]
@@ -974,7 +997,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
 
         firstResume.ShouldHaveReachedConsent();
         secondResume.ShouldHaveReachedConsent();
-        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]

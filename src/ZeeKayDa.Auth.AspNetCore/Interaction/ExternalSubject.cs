@@ -49,6 +49,17 @@ public static class ExternalSubject
                 "the subject together. Create the claim with its issuer set.");
         }
 
+        // A handler without ClaimsIssuer stamps its scheme name, which a rename would change.
+        if (string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ZeeKayDaInteractionException(
+                $"The subject claim provider '{providerId}' returned has the provider's registration name " +
+                "as its issuer, which a handler stamps when its ClaimsIssuer is not set. The session subject " +
+                "is derived from the issuer, so renaming the registration would give every user a new subject. " +
+                "Set ClaimsIssuer on the provider's options to a value naming the upstream identity provider, " +
+                "and never reuse it for a different provider.");
+        }
+
         return new ExternalIdentity(subject.Issuer, subject.Value);
     }
 
@@ -74,10 +85,12 @@ public static class ExternalSubject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The issuer namespaces the upstream subject, so the provider's registration name plays no
-    /// part: two registrations of one issuer share their users' identities, and renaming a
-    /// registration changes no subject. Use it to compute the subject an external user will get, to
-    /// link a local account to them before they first sign in.
+    /// The issuer namespaces the upstream subject: two registrations of one issuer share their users'
+    /// identities, and renaming a registration changes no subject. An OpenID Connect handler stamps the
+    /// ID token's issuer; an OAuth handler stamps its <c>ClaimsIssuer</c>, which the framework requires,
+    /// since the fallback is the registration name. Never give two different providers one issuer: their
+    /// users' subjects would collide. Use it to compute the subject an external user will get, to link a
+    /// local account to them before they first sign in.
     /// </para>
     /// <para>
     /// Both parts are compared exactly, case included. The result is

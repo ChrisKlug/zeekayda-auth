@@ -30,6 +30,7 @@ internal static class ProviderTestHost
     public const string LoginPath = "/account/login";
     public const string CollectMorePath = "/collect-more";
     public const string UpstreamSubject = "upstream-42";
+    public const string AcmeIssuer = "https://acme.example.net";
     public const string HandWrittenIssuer = "https://hand.example.net";
     public const string HandWrittenSubject = "hand-7";
 
@@ -45,6 +46,7 @@ internal static class ProviderTestHost
     {
         options.ClientId = "acme-client";
         options.ClientSecret = "acme-secret";
+        options.ClaimsIssuer = AcmeIssuer;
         options.AuthorizationEndpoint = "https://acme.example.net/authorize";
         options.TokenEndpoint = "https://acme.example.net/token";
         options.BackchannelHttpHandler = backchannel;

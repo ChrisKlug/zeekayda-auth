@@ -119,7 +119,7 @@ complete nothing else. A failed callback for an interaction the browser carries 
 interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one callback-scoped
 `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With no login page only a
 refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type never by message. An auto-promoted external principal's session subject is `ExternalSubject.Derive(issuer, subject)` — public, so a
-host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities and a rename changes nothing.
+host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities and a rename changes nothing. An OAuth handler stamps `ClaimsIssuer`, else the registration name, so an `OAuthOptions` provider without one fails startup, and a sign-in whose subject claim carries the registration name as its issuer is refused for any handler.
 `OnProviderSignIn` and the page reading a parked principal get the pair as `ExternalIdentity`, resolved before the hook from the subject claim's own `Claim.Issuer`, never an `iss` claim; a principal with no subject, or one with the default issuer, is refused there, so none is parked or linked. A host choosing other subjects does so in the hook.
 
 **A re-authentication demand — `prompt=login`, or `max_age` with no session or an older one — is one verdict for the login page and providers.** The

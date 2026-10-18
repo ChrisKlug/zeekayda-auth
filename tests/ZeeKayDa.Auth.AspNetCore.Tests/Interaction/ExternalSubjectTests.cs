@@ -160,4 +160,18 @@ public sealed class ExternalSubjectTests
 
         promote.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*issuer*");
     }
+
+    [Theory]
+    [InlineData("acme")]
+    [InlineData("Acme")]
+    public void Identify_refuses_a_subject_issued_under_the_registration_name_naming_ClaimsIssuer(string issuer)
+    {
+        // What a handler without ClaimsIssuer stamps: a rename would re-identify every user.
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "42", ClaimValueTypes.String, issuer)], "acme"));
+
+        var identify = () => ExternalSubject.Identify("acme", upstream);
+
+        identify.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*ClaimsIssuer*");
+    }
 }

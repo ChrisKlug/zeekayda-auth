@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- **An OAuth provider must set `ClaimsIssuer`, so renaming its registration no longer re-identifies
+  every user** (#1029). An external user's subject is derived from the issuer of their subject claim,
+  and an OAuth handler stamps `ClaimsIssuer`, else the registration name. A provider on `OAuthOptions`
+  without one now fails startup with `provider.claims_issuer_required`, and a sign-in through any
+  handler whose subject claim carries the registration name as its issuer is refused. Name the
+  upstream identity provider, such as by its issuer URL, and never reuse the value for a different
+  provider. OpenID Connect providers are unaffected: they stamp the ID token's issuer.
 - **One browser can be signed in to several accounts, and a request is answered only by the account
   it names** (#1032). `zkd.session` holds a list of accounts, each with its own session identifier,
   authentication time, methods and optional login identifier. An `id_token_hint` or `login_hint`

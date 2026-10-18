@@ -44,6 +44,13 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// framework logs. Startup warns about every such provider.
     /// </para>
     /// <para>
+    /// A provider on <c>OAuthOptions</c> must set <c>ClaimsIssuer</c>, or startup fails: an external
+    /// user's subject is derived from the issuer of their subject claim, and an OAuth handler falls
+    /// back to the registration name, which a rename would change. Name the upstream identity provider,
+    /// such as by its issuer URL, and never reuse the value for a different provider. A sign-in through
+    /// any handler whose subject claim carries the registration name as its issuer is refused.
+    /// </para>
+    /// <para>
     /// Startup also warns about a provider on <c>OAuthOptions</c> with <c>UsePkce</c> off, which
     /// leaves its authorization code open to injection. <c>AddOAuth</c> leaves it off; set it.
     /// </para>

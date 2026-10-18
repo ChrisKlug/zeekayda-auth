@@ -31,7 +31,7 @@ public sealed class ExternalIdentity
     /// <summary>
     /// The issuer of the provider's subject claim (<see cref="System.Security.Claims.Claim.Issuer"/>),
     /// never an <c>iss</c> claim: the OpenID Connect handler stamps the token's issuer, an OAuth
-    /// handler its <c>ClaimsIssuer</c>, which defaults to the scheme name.
+    /// handler its <c>ClaimsIssuer</c>. Never the registration name, which a sign-in refuses.
     /// </summary>
     public string Issuer { get; }
 

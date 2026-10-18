@@ -86,7 +86,7 @@ public sealed class ProviderIdTokenHintTests
         var response = await ReturnFromProviderAsync(client, interactionId, "acme");
 
         var idToken = await RedeemAsync(client, response.ShouldHaveIssuedCodeTo(RegisteredRedirect));
-        SubjectOf(idToken).Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        SubjectOf(idToken).Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     // ── Linking page ──────────────────────────────────────────────────────────────────────────────
