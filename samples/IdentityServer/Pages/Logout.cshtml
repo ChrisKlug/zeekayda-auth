@@ -20,6 +20,10 @@
    framework added. *@
 <form method="post">
     <button id="logout-submit" type="submit">Sign out</button>
+    @if (Model.OtherAccounts > 0)
+    {
+        <button id="logout-all" type="submit" name="scope" value="all">Sign out of all accounts</button>
+    }
 </form>
 
 <p><a href="/">Stay signed in</a></p>

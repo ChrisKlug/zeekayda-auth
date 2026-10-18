@@ -4,7 +4,8 @@
 provider registration through `WithProviders`, the login dispatch rules, the external round
 trip and in-flow consent exist; remembered consent grants and home realm discovery do not.
 The authorize endpoint's protocol rules are in
-`authorization-and-interaction.md`; interface shapes for the unbuilt part are in
+`authorization-and-interaction.md`; what the SSO session cookie holds, and which of its accounts
+answers, is `signed-in-accounts.md`; interface shapes for the unbuilt part are in
 `docs/design/authorization-endpoint-interaction.md`.
 
 ## Decisions in force
@@ -54,16 +55,6 @@ echoes no value would have no enforcement — which is why the providers' `DenyA
 parameterless. The denial never becomes a redirect primitive either: the destination is the registered URI
 from the decrypted interaction context, so an expired context has no destination and the request has nothing
 to continue.
-
-**The SSO session identifier is framework-minted, unguessable and stable for the life of the
-session — and is not the cookie value, which is regenerated on every promotion so that
-session-fixation resistance is a stated property rather than an accident of what `SignInAsync` does
-today.** The identifier is carried as a reserved claim the host neither supplies nor sees and kept
-across re-authentication (`prompt=login` and `max_age` refresh `auth_time` only); a fresh sign-in
-or a changed subject mints a new one. None of those properties may be traded away: one derived from
-the cookie value breaks every binding the moment the cookie rotates, and one tracking authentication
-events could never key a denylist. Claims in the reserved `zkd:` namespace are stripped from the
-claims a host supplies, or a host copying claims from an inbound token could choose its own identifier.
 
 **Framework cookie names are reserved, the `zkd.interaction.` and `zkd.challenge.` prefixes included; a host
 registering one fails at startup.** Every internal cookie is `HttpOnly`; tickets are Data-Protection encrypted, and the
@@ -126,13 +117,13 @@ complete nothing else. A failed callback for an interaction the browser carries 
 interaction alive and the outcome on `LoginRequest.ProviderReturn` — found by the handler's own properties, else by the one callback-scoped
 `zkd.challenge.<id>` cookie (none or several: the error page; a forged one changes only the message, accepted). With no login page only a
 refusal reaches the client, as `access_denied` on its own properties; the rest renders locally, logged by type never by message. An auto-promoted external principal's session subject is `ExternalSubject.Derive(issuer, subject)` — public, so a
-host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities,
-a rename changes nothing, and a subject without an issuer is refused. A host choosing other subjects does so in `OnProviderSignIn`.
+host can pre-link — never the upstream value: the issuer namespaces the subject, so two registrations of one issuer share identities and a rename changes nothing.
+`OnProviderSignIn` and the page reading a parked principal get the pair as `ExternalIdentity`, resolved before the hook from the subject claim's own `Claim.Issuer`, never an `iss` claim; a principal with no subject, or one with the default issuer, is refused there, so none is parked or linked. A host choosing other subjects does so in the hook.
 
-**A re-authentication demand reaches a provider only through `OnProviderChallenge`, and fails closed.** With `prompt=login`, or `max_age`
-and no session or an older one, a challenge goes out only when the hook answers `Reauthenticating` — the claim a fresh `auth_time` rests on;
-no hook or `Proceed` answers `login_required` (OIDC Core §3.1.2.1), `Refuse` always does, a throw or `null` answers `server_error`. The
-framework re-stamps its round-trip items and ticket lifetime after the hook, so no hook can break the return or lengthen the external cookie.
+**A re-authentication demand — `prompt=login`, or `max_age` with no session or an older one — is one verdict for the login page and providers.** The
+login page reads it as `LoginRequest.ReauthenticationRequired` and must then authenticate the user afresh; fail-closed, a provider is challenged only when
+`OnProviderChallenge` answers `Reauthenticating` — the claim a fresh `auth_time` rests on; no hook or `Proceed` answers `login_required` (OIDC Core
+§3.1.2.1), `Refuse` always does, a throw or `null` answers `server_error`. Round-trip items and ticket lifetime are re-stamped after the hook, so no hook can break the return or lengthen the external cookie.
 
 **Local sign-in is a flag (`SupportsLocalSignIn`, default `true`), not a provider, and whether a page is needed
 decides dispatch, not the path.** `LoginPath` defaults to `/login` and `ConsentPath` to `/consent`; a path is only an

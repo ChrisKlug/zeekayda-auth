@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -202,9 +203,30 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
         var session = (await ReadSessionAsync(client))!.Value;
         session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject),
             "the upstream subject is never used verbatim");
-        session.GetProperty("name").GetString().Should().Be("Upstream User", "the provider's other claims are kept");
         session.GetProperty("sid").GetString().Should().NotBeNullOrEmpty();
         session.GetProperty("amr").GetArrayLength().Should().Be(0, "the framework was told nothing about how the user authenticated");
+    }
+
+    [Fact]
+    public async Task A_provider_principal_with_200_claims_gives_a_one_chunk_session_cookie_holding_only_the_frameworks_claims()
+    {
+        Claim[] returned =
+        [
+            new("sub", UpstreamSubject, ClaimValueTypes.String, "acme"),
+            .. Enumerable.Range(0, 200).Select(index => new Claim($"claim-{index}", new string('x', 40), ClaimValueTypes.String, "acme")),
+        ];
+        using var factory = NewFactory(configureBuilder: builder =>
+            builder.WithProviders(auth => auth.AddOAuth("acme", "Acme", ConfigureAcmeReturning(returned))));
+        using var client = NewClient(factory);
+
+        var resume = await RoundTripAsync(client);
+
+        resume.ShouldHaveReachedConsent();
+        resume.Headers.GetValues("Set-Cookie").Where(cookie => cookie.StartsWith(ZeeKayDaCookies.Session, StringComparison.Ordinal))
+            .Should().ContainSingle()
+            .Which.Should().NotStartWith($"{ZeeKayDaCookies.Session}=chunks-");
+        (await ReadSessionAsync(client))!.Value.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount]);
     }
 
     [Fact]
@@ -817,7 +839,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
-    public async Task A_subject_claim_without_an_issuer_is_refused_at_promotion()
+    public async Task A_subject_claim_without_an_issuer_is_refused_before_the_sign_in_hook()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
             AddHandWritten(auth, options => options.SubjectWithoutIssuer = true)));

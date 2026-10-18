@@ -438,21 +438,23 @@ public sealed class LoginInteraction   // singleton over IHttpContextAccessor, a
     // What the page renders: the client (ClientId + optional DisplayName), LocalLoginEnabled,
     // the configured Providers, ProviderReturn — the provider the user just came back from
     // without signing in, Declined or Failed, null on an ordinary arrival — and LoginHint, the
-    // client's login_hint verbatim (at most 256 characters; a hint, never an identity). zkd_i-bound on
+    // client's login_hint verbatim (at most 256 characters; a hint, never an identity), and
+    // ReauthenticationRequired, the verdict the provider challenge hook also gets: when true the
+    // page must authenticate the user afresh, not trust a cookie of its own. zkd_i-bound on
     // SignInAsync's exact terms; stamps the page unframeable and uncacheable, as consent's does.
     // TryGetRequestAsync answers null instead of throwing when there is nothing to sign in for.
     Task<LoginRequest> GetRequestAsync(CancellationToken cancellationToken = default);
     Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
-    // The framework builds the session principal from subject plus additionalClaims (a sub or
-    // NameIdentifier claim is refused; zkd:* is stripped) and promotes it to the SSO session,
-    // continues the flow (consent → code → redirect). The claims are held on the session only —
-    // tokens and userinfo get theirs from IClaimsProvider. [] omits amr.
+    // The framework promotes the subject to the SSO session and continues the flow (consent →
+    // code → redirect). The session holds sub, zkd:sid, zkd:auth_time and zkd:amr, nothing else:
+    // tokens and userinfo get their claims from IClaimsProvider. The subject is 1–255 printable
+    // ASCII characters with no space (OIDC Core §2), refused at the call. [] omits amr.
     // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
     // when the request carries no zkd_i, when there is no interaction context, or when the two
     // name different interactions (see #593 for the future [Authorize]-driven mode).
-    Task SignInAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
-    Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
+    Task SignInAsync(string subject, string authenticationMethod);
+    Task SignInAsync(string subject, IEnumerable<string> authenticationMethods);
 
     // The Cancel button. Ends the request with error=access_denied at the registered redirect
     // URI, establishing no session and leaving an existing one alone. Terminal, zkd_i-bound on
@@ -473,18 +475,17 @@ public sealed class ProviderSignInInteraction       // built (#603); the page Re
     // provider no longer registered — recoverable.
     Task<PendingPrincipal?> GetPendingPrincipalAsync(CancellationToken cancellationToken = default);
 
-    // Terminal. The framework builds the session principal as auto-promotion would — the derived
-    // subject, the provider's claims — plus these additions. A sub or NameIdentifier claim is
-    // refused; zkd:* is stripped; held on the session only, as at login. No amr. zkd_i-bound on
-    // SignInAsync's terms.
-    Task SignInAsync(params Claim[] additionalClaims);
+    // Terminal. The session auto-promotion would establish: the derived subject, none of the
+    // provider's claims. A collect-more page keeps what it collected in the host's own store.
+    // No amr. zkd_i-bound on SignInAsync's terms.
+    Task SignInAsync();
 
     // Terminal. A local account in place of the parked principal — account linking — taking
     // exactly what LoginInteraction.SignInAsync takes, except that a subject equal to the
     // upstream one the provider returned is refused: the session subject is never the upstream
     // subject verbatim.
-    Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, params Claim[] additionalClaims);
-    Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, params Claim[] additionalClaims);
+    Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod);
+    Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods);
 
     // Terminal. error=access_denied naming the provider stage — ProviderSignInContext.DenyAsync's
     // exact description — discarding the interaction and the parked principal.
@@ -517,6 +518,7 @@ public sealed class ProviderDescriptor                   // one per scheme WithP
 
 public sealed class ProviderSignInContext                // what OnProviderSignIn receives
 {
+    public ExternalIdentity Identity { get; }            // the upstream issuer and subject, resolved before the hook
     public ClaimsPrincipal Principal { get; }            // as the provider returned it, zkd:* stripped
     public ProviderDescriptor Provider { get; }
     public ClientInformation Client { get; }             // ClientId and the registration's DisplayName
@@ -533,8 +535,15 @@ public sealed class ProviderSignInContext                // what OnProviderSignI
     public Task DenyAsync();
 }
 
+public sealed class ExternalIdentity                     // the key a linking page finds a local account by
+{
+    public string Issuer { get; }                        // Claim.Issuer of the subject claim, never an iss claim
+    public string Subject { get; }                       // the sub or name-identifier value
+}
+
 public sealed class PendingPrincipal                     // GetPendingPrincipalAsync, on the collect-more page
 {
+    public ExternalIdentity Identity { get; }            // the same pair, read back from the parked principal
     public ClaimsPrincipal Principal { get; }
     public ProviderDescriptor Provider { get; }
 }
@@ -563,28 +572,27 @@ account. The issuer is framework-visible for every handler: a JWT-validating han
 validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which defaults to
 the scheme name, and a hand-written handler sets it when it creates the claim. A registration that
 validates several issuers therefore separates its users by issuer rather than by promise. A
-subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and promotion refuses it
-with a message saying so — a handler that constructs claims without an issuer is one line away
+subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and `/connect/resume`
+refuses it before `OnProviderSignIn` runs, as it does a principal with no subject, with a message
+saying so: neither can reach the hook or be parked — a handler that constructs claims without an issuer is one line away
 from compliant. Two issuers returning the same value cannot share a session or a `sub`. The
 registration name is not in the hash: the issuer already namespaces the subject, so renaming a
 registration changes no subject, and two registrations of one issuer share their users'
 identities. `ExternalSubject.Derive` is public, so a host can compute the default subject to link
 an account before first sign-in. A host
 that maps external identities onto its own users does so on the page `RedirectToAsync` leads to,
-through that page's own service: `ProviderSignInInteraction.SignInAsync(params Claim[])` has the
-framework build the promoted principal — the derived subject, the provider's claims, plus what the
-page collected — and refuses a subject claim, so the page cannot put the raw upstream `sub` into
-the session; `SignInWithReplacedAccountAsync` is for linking to a local account, whose subject
+through that page's own service: `ProviderSignInInteraction.SignInAsync()` has the framework
+promote the derived subject and takes no subject or claims, so the page cannot put the raw upstream
+`sub` into the session; `SignInWithReplacedAccountAsync` is for linking to a local account, whose subject
 replaces the parked principal — and is refused when that subject is the upstream one. Both consume the parked principal. One service per host page: the login page's
 `LoginInteraction` does not read the parked principal.
-`OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt,
-and shapes the *session* principal only: token claims never come from the session, they are
-resolved through `claims-resolution.md`'s provider on every issuance, and for the same reason the
-claims `ProviderSignInInteraction.SignInAsync` adds live in the session, not in any token; reserved protocol claims (`iss`, `sub`, `aud`, `exp`, `nonce`,
-`acr`, `amr`, `zkd:*`) are stripped regardless. Until it exists, a host that wants the session to
-hold something other than what the provider returned redirects to a page of its own and finishes
-there through `ProviderSignInInteraction`; a change to the principal `OnProviderSignIn` receives
-is not promoted, since the framework promotes its own copy.
+`OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt.
+It cannot add to the session: the session cookie holds `sub`, `zkd:sid`, `zkd:auth_time` and
+`zkd:amr`, all its one reader takes, and token claims never come from the session — they are
+resolved through `claims-resolution.md`'s provider on every issuance. A host that wants to keep
+something the provider returned stores it itself, in the hook or on a page of its own; a change to
+the principal `OnProviderSignIn` receives is not promoted, since the framework promotes only the
+derived subject.
 
 ## Request validation (#83)
 

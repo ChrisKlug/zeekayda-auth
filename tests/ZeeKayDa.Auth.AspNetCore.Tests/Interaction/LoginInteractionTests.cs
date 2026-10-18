@@ -79,6 +79,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
                 providers = request.Providers.Count,
                 providerReturn = request.ProviderReturn is not null,
                 loginHint = request.LoginHint,
+                reauthenticationRequired = request.ReauthenticationRequired,
             });
         });
 
@@ -87,24 +88,16 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             var subject = form["sub"].FirstOrDefault() ?? "user-1";
 
-            var claims = new List<Claim> { new("name", "Test User") };
-
-            // A host that copies claims from somewhere else could carry a framework-reserved one
-            // in with them — under any casing, since claim types are matched case-insensitively.
-            // The test passes one deliberately.
-            if (form["forge_type"].FirstOrDefault() is { Length: > 0 } forgedType)
-                claims.Add(new Claim(forgedType, form["forge_value"].FirstOrDefault() ?? string.Empty));
-
             // Absent, the page reports a password through the single-method overload — the
             // ordinary case, and what most tests here want. "amr_one" names that one method;
             // "amr_omit" drives the report-nothing case; repeated "amr" fields drive the
             // multi-factor one.
             if (form.ContainsKey("amr_omit"))
-                await login.SignInAsync(subject, [], [.. claims]);
+                await login.SignInAsync(subject, []);
             else if (form.TryGetValue("amr", out var methods))
-                await login.SignInAsync(subject, [.. methods.Select(value => value ?? string.Empty)], [.. claims]);
+                await login.SignInAsync(subject, [.. methods.Select(value => value ?? string.Empty)]);
             else
-                await login.SignInAsync(subject, form["amr_one"].FirstOrDefault() ?? AuthenticationMethods.Password, [.. claims]);
+                await login.SignInAsync(subject, form["amr_one"].FirstOrDefault() ?? AuthenticationMethods.Password);
         });
 
         // The Cancel button, exactly as the issue's sample host writes it.
@@ -147,7 +140,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
                 {
                     sid = result.Principal!.FindFirstValue(SsoSessionClaimTypes.SessionId),
                     sub = result.Principal.FindFirstValue("sub"),
-                    name = result.Principal.FindFirstValue("name"),
+                    claimTypes = result.Principal.Claims.Select(claim => claim.Type).Distinct().ToArray(),
                     authTime = result.Principal.FindFirstValue(SsoSessionClaimTypes.AuthTime),
                     amr = result.Principal.FindAll(SsoSessionClaimTypes.Amr).Select(c => c.Value).ToArray(),
                 })
@@ -274,6 +267,74 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
 
         var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
         page.GetProperty("loginHint").GetString().Should().Be("alice@example.com");
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_when_the_client_sends_prompt_login()
+    {
+        var query = ValidQuery();
+        query["prompt"] = "login";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_when_the_session_is_older_than_max_age()
+    {
+        await SignInAsync();
+        Time.Advance(TimeSpan.FromMinutes(10));
+        var query = ValidQuery();
+        query["max_age"] = "60";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_reauthentication_required_for_max_age_with_no_session()
+    {
+        var query = ValidQuery();
+        query["max_age"] = "3600";
+
+        var page = await RenderLoginPageAsync(query);
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_no_reauthentication_required_when_a_fresh_session_arrived_after_the_handoff()
+    {
+        var query = ValidQuery();
+        query["max_age"] = "3600";
+        var waiting = await AuthorizeAsync(query);
+        await SignInAsync();
+
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(waiting)), TestContext.Current.CancellationToken);
+
+        var page = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).RootElement;
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeFalse(
+            "the page reads the session as it is now, and a session signed in since the handoff is within max_age");
+    }
+
+    [Fact]
+    public async Task GetRequestAsync_reports_no_reauthentication_required_on_an_ordinary_arrival_with_no_session()
+    {
+        var page = await RenderLoginPageAsync(ValidQuery());
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeFalse();
+    }
+
+    /// <summary>Starts an authorization request and returns what the login page was told to render for.</summary>
+    private async Task<System.Text.Json.JsonElement> RenderLoginPageAsync(Dictionary<string, string?> query)
+    {
+        var handoff = await AuthorizeAsync(query);
+        var response = await _client.GetAsync(WithInteractionId(LoginPath, InteractionIdFrom(handoff)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        return System.Text.Json.JsonDocument.Parse(body).RootElement.Clone();
     }
 
     [Fact]
@@ -487,32 +548,6 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
             TestContext.Current.CancellationToken);
 
         await signIn.ShouldHaveFoundNothingToContinueAsync();
-    }
-
-    [Fact]
-    public async Task SignInAsync_holds_the_additional_claims_as_validated_not_as_later_changed()
-    {
-        // A host that keeps a reference to the array it passed and changes it while the store is
-        // awaited signs in what was validated, not the change.
-        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var factory = HoldingFactory(entered, proceed, endpoints =>
-            endpoints.MapPost(MutatingSignInPath, async (LoginInteraction login) =>
-            {
-                var claims = new[] { new Claim("name", "Test User") };
-                var signingIn = login.SignInAsync("user-1", AuthenticationMethods.Password, claims);
-                await entered.Task;
-                claims[0] = new Claim("name", "hijacked");
-                proceed.SetResult();
-                await signingIn;
-            }));
-        using var client = NewClient(factory);
-        var handoff = await client.GetAsync(AuthorizeUrl(ValidQuery()), TestContext.Current.CancellationToken);
-
-        var signIn = await PostEmptyFormAsync(client, WithInteractionId(MutatingSignInPath, InteractionIdFrom(handoff)));
-
-        signIn.ShouldHaveReachedConsent();
-        (await ReadSessionAsync(client)).GetProperty("name").GetString().Should().Be("Test User");
     }
 
     [Fact]
@@ -835,40 +870,15 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
 
     // ── The SSO session ───────────────────────────────────────────────────────────────────────
 
-    [Theory]
-    [InlineData("zkd:sid")]
-    [InlineData("ZKD:sid")]
-    [InlineData("Zkd:Sid")]
-    public async Task A_host_supplied_session_id_claim_is_stripped_whatever_its_case(string claimType)
-    {
-        var handoff = await AuthorizeAsync();
-
-        await PostLoginAsync(
-            InteractionIdFrom(handoff),
-            ("sub", "user-1"),
-            ("forge_type", claimType),
-            ("forge_value", "chosen-by-the-host"));
-
-        (await ReadSessionIdAsync()).Should().NotBe("chosen-by-the-host",
-            "claim types are matched case-insensitively, so the reserved namespace must be stripped that way too");
-    }
-
     [Fact]
-    public async Task A_host_supplied_amr_claim_is_stripped_whatever_its_case()
+    public async Task The_session_cookie_holds_only_the_claims_the_framework_reads()
     {
         var handoff = await AuthorizeAsync();
 
-        await PostLoginAsync(
-            InteractionIdFrom(handoff),
-            ("sub", "user-1"),
-            ("forge_type", "ZKD:amr"),
-            ("forge_value", "mfa"));
+        await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"));
 
-        // An RP's step-up check reads amr, so a host must not be able to add to what the framework
-        // recorded — "mfa" arriving from the login form would be a lie the RP cannot detect.
-        (await ReadSessionAsync()).GetProperty("amr").EnumerateArray()
-            .Select(value => value.GetString())
-            .Should().Equal(["pwd"]);
+        (await ReadSessionAsync()).GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.Amr, SsoSessionClaimTypes.ClientAccount]);
     }
 
     [Fact]
@@ -940,52 +950,16 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
     }
 
     [Theory]
-    [InlineData("sub")]
-    [InlineData("SUB")]
-    [InlineData(ClaimTypes.NameIdentifier)]
-    public async Task An_additional_claim_naming_the_subject_is_refused(string claimType)
+    [InlineData("alice@exämple.se")]
+    [InlineData("alice smith")]
+    public async Task A_subject_outside_printable_ascii_is_refused_naming_the_argument(string subject)
     {
         var handoff = await AuthorizeAsync();
 
-        // The subject is the argument; a second one among the claims is the page's mistake, and
-        // picking either silently would hide it.
-        var signIn = async () => await PostLoginAsync(
-            InteractionIdFrom(handoff),
-            ("sub", "user-1"),
-            ("forge_type", claimType),
-            ("forge_value", "someone-else"));
+        var signIn = async () => await PostLoginAsync(InteractionIdFrom(handoff), ("sub", subject));
 
-        await signIn.Should().ThrowAsync<ArgumentException>();
+        (await signIn.Should().ThrowAsync<ArgumentException>()).Which.ParamName.Should().Be("subject");
         (await ReadSessionIdAsync()).Should().BeNull();
-    }
-
-    [Fact]
-    public async Task The_additional_claims_are_held_on_the_session()
-    {
-        var handoff = await AuthorizeAsync();
-
-        await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"));
-
-        (await ReadSessionAsync()).GetProperty("name").GetString().Should().Be("Test User");
-    }
-
-    [Fact]
-    public async Task A_host_supplied_auth_time_claim_cannot_defeat_max_age()
-    {
-        // A future auth_time would make (now - authTime) negative, so no max_age could ever
-        // exceed it and re-authentication would never be required again.
-        var handoff = await AuthorizeAsync();
-        await PostLoginAsync(
-            InteractionIdFrom(handoff),
-            ("sub", "user-1"),
-            ("forge_type", "ZKD:auth_time"),
-            ("forge_value", Now.AddYears(1).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
-
-        Time.Advance(TimeSpan.FromMinutes(10));
-        var query = ValidQuery();
-        query["max_age"] = "60";
-
-        (await AuthorizeAsync(query)).Headers.Location!.OriginalString.Should().StartWith($"{LoginPath}?");
     }
 
     [Fact]

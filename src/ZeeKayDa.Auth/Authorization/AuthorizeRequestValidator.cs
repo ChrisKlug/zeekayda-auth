@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ZeeKayDa.Auth.Clients;
 using ZeeKayDa.Auth.Logging;
 using ZeeKayDa.Auth.Scopes;
+using ZeeKayDa.Auth.Tokens;
 
 namespace ZeeKayDa.Auth.Authorization;
 
@@ -19,6 +20,7 @@ namespace ZeeKayDa.Auth.Authorization;
 internal sealed partial class AuthorizeRequestValidator(
     ValidatedClientResolver clientResolver,
     ValidatedScopeCatalog scopes,
+    IdTokenHintValidator idTokenHints,
     SanitizingLogger<AuthorizeRequestValidator> logger)
 {
     private const string LocalErrorDescription =
@@ -50,6 +52,7 @@ internal sealed partial class AuthorizeRequestValidator(
         PromptValuesArePermittedForTheClient,
         MaxAgeIsWellFormed,
         LoginHintIsWellFormed,
+        IdTokenHintWasIssuedToTheClient,
     ];
 
     private readonly ValidatedScopeCatalog _scopes = scopes;
@@ -66,7 +69,7 @@ internal sealed partial class AuthorizeRequestValidator(
             return LocalError();
 
         var (scopes, problem) = await LoadScopesAsync(cancellationToken).ConfigureAwait(false);
-        var context = new RequestContext(parameters, target.Client, scopes);
+        var context = new RequestContext(parameters, target.Client, scopes, idTokenHints);
         problem ??= FirstProblem(context);
 
         if (problem?.OperatorDetail is { } detail)
@@ -362,6 +365,20 @@ internal sealed partial class AuthorizeRequestValidator(
             _ => null,
         };
 
+    // Lifetime is not checked: a client sends the ID token it already holds, usually expired by now.
+    // Empty means omitted (RFC 6749 §3.1).
+    private static Problem? IdTokenHintWasIssuedToTheClient(RequestContext context)
+    {
+        if (context.Single("id_token_hint") is not { Length: > 0 } idTokenHint)
+            return null;
+
+        if (context.IdTokenHints.Validate(idTokenHint, context.Client.ClientId) is not { } hint)
+            return InvalidRequest("The id_token_hint parameter is not an ID token this server issued to the client.");
+
+        context.RequiredSubject = hint.Subject;
+        return null;
+    }
+
     private static ValidatedAuthorizeRequest Build(RequestContext context, string redirectUri, string? state) =>
         new()
         {
@@ -374,6 +391,7 @@ internal sealed partial class AuthorizeRequestValidator(
             Prompts = context.Prompts,
             MaxAge = context.MaxAge,
             LoginHint = context.Single("login_hint") is { } hint && !string.IsNullOrWhiteSpace(hint) ? hint : null,
+            RequiredSubject = context.RequiredSubject,
         };
 
     /// <summary>The request's <c>nonce</c>, or <see langword="null"/> when it carried none.</summary>
@@ -410,7 +428,8 @@ internal sealed partial class AuthorizeRequestValidator(
         Description = LocalErrorDescription,
     };
 
-    private static bool IsRefusedInLoginHint(Rune rune) =>
+    /// <summary>A character a <c>login_hint</c>, or a login identifier matched against one, may not hold.</summary>
+    internal static bool IsRefusedInLoginHint(Rune rune) =>
         Rune.GetUnicodeCategory(rune) switch
         {
             UnicodeCategory.Control or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,
@@ -450,7 +469,8 @@ internal sealed partial class AuthorizeRequestValidator(
     private sealed class RequestContext(
         IReadOnlyDictionary<string, IReadOnlyList<string?>> parameters,
         IClient client,
-        IReadOnlyCollection<ScopeDefinition> scopes)
+        IReadOnlyCollection<ScopeDefinition> scopes,
+        IdTokenHintValidator idTokenHints)
     {
         public IReadOnlyDictionary<string, IReadOnlyList<string?>> Parameters => parameters;
 
@@ -470,6 +490,11 @@ internal sealed partial class AuthorizeRequestValidator(
 
         /// <summary>Set by <c>CodeChallengeIsPresentUnlessTheClientMayOmitIt</c>; <see langword="null"/> when the client omitted it and may.</summary>
         public string? CodeChallenge { get; set; }
+
+        public IdTokenHintValidator IdTokenHints => idTokenHints;
+
+        /// <summary>Set by <c>IdTokenHintWasIssuedToTheClient</c>: the subject a valid hint names.</summary>
+        public string? RequiredSubject { get; set; }
 
         /// <summary>The single value of <paramref name="name"/>, or <see langword="null"/>.</summary>
         public string? Single(string name) => TryGetSingle(parameters, name, out var value) ? value : null;

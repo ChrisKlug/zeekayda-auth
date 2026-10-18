@@ -53,4 +53,31 @@ public sealed class InteractionOptions
     /// With it off and no providers registered, nobody can authenticate, so startup fails.
     /// </remarks>
     public bool SupportsLocalSignIn { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the path of the host's account picker, which completes the flow by calling
+    /// <c>AccountSelectionInteraction.SelectAsync</c>. When <see langword="null"/> (the default), a
+    /// request with <c>prompt=select_account</c> is answered <c>account_selection_required</c>
+    /// (OpenID Connect Core §3.1.2.6).
+    /// </summary>
+    /// <remarks>
+    /// Must be an absolute path within the host application, without scheme, authority, query or
+    /// fragment. The redirect carries <c>zkd_i</c> on the same terms as <see cref="LoginPath"/>. The
+    /// framework sends the browser here only for <c>prompt=select_account</c>, and only when an
+    /// account it holds could answer without signing in again; otherwise the request goes to the
+    /// login page.
+    /// </remarks>
+    public string? SelectAccountPath { get; set; }
+
+    /// <summary>
+    /// Gets or sets how many accounts one browser can be signed in to at once, from 1 to 20. Defaults to 5.
+    /// </summary>
+    /// <remarks>
+    /// Accounts beyond the first come only from <c>LoginInteraction.AddAccountAsync</c>, or from
+    /// <c>ProviderSignInContext.AddAccount</c>; every other sign-in replaces the accounts held. Adding
+    /// one past this number signs out the account least recently signed in to or chosen. Every account
+    /// is a few hundred bytes of the session cookie, which is why a value above 20 fails at startup: a
+    /// larger cookie can be refused as a request header, and the user would get an error on every request.
+    /// </remarks>
+    public int MaxSignedInAccounts { get; set; } = 5;
 }

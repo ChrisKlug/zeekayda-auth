@@ -4,9 +4,8 @@
 error model, hands an unauthenticated one to the host's login page or an external provider, an
 authenticated one to the host's consent page, which returns through `ConsentInteraction`, and
 answers a request past both with an authorization code at the registered redirect URI. Remembered
-consent grants are the unbuilt part (#632). Service shapes:
-`docs/design/authorization-endpoint-interaction.md`; the interaction surface, cookies and SSO
-session: `interaction-and-session.md`; the code store: `token-stores.md`.
+consent grants are the unbuilt part. Service shapes: `docs/design/authorization-endpoint-interaction.md`;
+the interaction surface and cookies: `interaction-and-session.md`; the SSO session's accounts: `signed-in-accounts.md`; the code store: `token-stores.md`.
 
 ## Decisions in force
 
@@ -36,11 +35,10 @@ Phase 1 authenticates `client_id` and the `redirect_uri` (shape, exact match, tr
 errors to the client. A phase-1 error renders locally on the error page. Merging them is an
 open-redirect and error-exfiltration hole (RFC 6749 §3.1.2.4, §4.1.2.1).
 
-**No error path ever redirects to an unvalidated URI.** If an interaction context has expired and a
-validated `redirect_uri` cannot be recovered, the local error page is the only safe destination. Where
-one *is* recoverable, redirect to the client with the spec error (`interaction_required`,
-`login_required`, …) rather than showing a dead end. The framework never auto-restarts a flow — the
-relying party decides whether to retry.
+**No error path ever redirects to an unvalidated URI.** An expired interaction context whose
+validated `redirect_uri` cannot be recovered ends on the local error page; where one *is*
+recoverable, the client gets the spec error (`interaction_required`, `login_required`, …) rather than
+a dead end. The framework never auto-restarts a flow — the relying party decides whether to retry.
 
 **PKCE with `S256` is enforced for every client, with the one exception OAuth 2.1 §7.5.1.1 allows:**
 a confidential client whose registration sets `RequirePkce` to `false` may omit `code_challenge`.
@@ -61,8 +59,15 @@ and discovery says so (`authorization_response_iss_parameter_supported`), since 
 relying party's silent-auth iframe is a clickjacking vector. It succeeds only against an existing
 session plus a prior consent grant covering the requested scopes, and otherwise returns
 `login_required` / `consent_required` / `account_selection_required` / `interaction_required`.
-**`prompt=select_account` is refused with `account_selection_required`**, with or without a session:
-there is no account picker, and a server that cannot obtain a selection must say so (§3.1.2.1).
+**`prompt=select_account` goes to the account picker (`signed-in-accounts.md`), and without one is
+refused `account_selection_required`**: a server that cannot obtain a selection must say so (§3.1.2.1).
+
+**An `id_token_hint` names the only user who may answer** (OIDC Core §3.1.2.2). It must be this
+issuer's ID token, signed by the key ring and issued to the requesting client — lifetime ignored, as
+a hint has usually expired — or it is `invalid_request` at the client. It selects that user's account
+from those the browser holds; with none, `login_required` under `prompt=none`, else the login page,
+told the subject as `LoginRequest.RequiredSubject`; a sign-in completing as anyone else — local,
+auto-promoted or linked, in derived form — is refused `login_required` before the session changes.
 
 **Consent is asked of every user for every client on first use, and only a remembered grant or a
 per-registration opt-out skips it.** The consent page is the one thing between a sign-in and an
@@ -77,8 +82,8 @@ answers `consent_required` — not yet, rather than a reversal of the paragraph 
 
 **A consent decision is recorded by the session it was asked of.** Every `ConsentInteraction` method
 is `zkd_i`-bound on the login service's terms and additionally refuses when the session cookie no
-longer names the session and subject that authenticated the request — a sign-out, or a sign-in as
-someone else, between the handoff and the answer. A grant can only narrow the request: it is
+longer holds the account session and subject that authenticated the request — a sign-out, or a
+sign-in replacing it, between the handoff and the answer. A grant can only narrow the request: it is
 re-intersected with the effective scopes, and always keeps `openid`, since agreeing to anything is
 agreeing to be identified and a page that wants to refuse calls `DenyAsync`. The client is resolved
 again at every step — the post-authentication dispatch, each consent call and each denial — and must
@@ -137,13 +142,9 @@ step occurred goes only to clients that opted in (RFC 9700 information disclosur
 
 ## Tried, didn't work
 
-- **Pre-routing interception via `IAuthenticationRequestHandler`** (ADR 0005, accepted and
-  reviewer-signed-off 2026-07-01; reversed 2026-08-28 in the S2 shape conversation before any code).
-  One stated reason was factually wrong (a routed endpoint *can* serve GET and POST — `MapMethods`),
-  the no-`MapZeeKayDaAuth()` ergonomic goal was mooted by the other endpoints requiring mapping
-  anyway, and hiding the request from middleware between `UseAuthentication` and the endpoint
-  protects little — while costing hand-rolled HTTPS/header/rate-limit reimplementation and a
-  meaningless scheme registration. Do not re-propose without new facts; the full analysis is in
-  `docs/design/authorization-endpoint-interaction.md`.
+- **Pre-routing interception via `IAuthenticationRequestHandler`**, reviewer-signed-off, then reversed
+  before any code: a routed endpoint serves GET and POST (`MapMethods`), every other endpoint is mapped
+  anyway, and it would hand-roll HTTPS, header and rate-limit handling and register a meaningless
+  scheme. Do not re-propose without new facts; analysis: `docs/design/authorization-endpoint-interaction.md`.
 - **`nonce` required on every `openid` request.** OIDC Core §3.1.2.1 requires it only where the
   authorization endpoint returns an ID token, and the conformance suite refuses the stricter rule.

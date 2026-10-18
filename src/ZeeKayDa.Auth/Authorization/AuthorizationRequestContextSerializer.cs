@@ -13,7 +13,7 @@ namespace ZeeKayDa.Auth.Authorization;
 internal static class AuthorizationRequestContextSerializer
 {
     /// <summary>The format version; any other is refused, as a positional format cannot detect a moved field.</summary>
-    private const byte Version = 5;
+    private const byte Version = 6;
 
     public static byte[] Encode(AuthorizationRequestContext context)
     {
@@ -50,6 +50,7 @@ internal static class AuthorizationRequestContextSerializer
         WriteNullableTimestamp(writer, context.ConsentedAt);
         WriteProviderAttempt(writer, context.ProviderAttempt);
         WriteNullableString(writer, context.LoginHint);
+        WriteNullableString(writer, context.RequiredSubject);
 
         writer.Flush();
         return buffer.ToArray();
@@ -130,7 +131,12 @@ internal static class AuthorizationRequestContextSerializer
         if (!TryReadProviderAttempt(reader, out var attempt))
             return null;
 
-        return context with { ProviderAttempt = attempt, LoginHint = ReadNullableString(reader) };
+        return context with
+        {
+            ProviderAttempt = attempt,
+            LoginHint = ReadNullableString(reader),
+            RequiredSubject = ReadNullableString(reader),
+        };
     }
 
     /// <summary>The prompt set, or <see langword="null"/> for a negative count or a value outside the enum.</summary>

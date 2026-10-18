@@ -43,6 +43,7 @@ public class AuthorizationRequestContextSerializerTests
             ConsentedAt = Now.AddMinutes(-1),
             ProviderAttempt = new ProviderAttempt("facebook", Declined: true),
             LoginHint = "user@example.com",
+            RequiredSubject = "hinted-subject",
         };
 
         AuthorizationRequestContextSerializer.TryDecode(

@@ -204,6 +204,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         AddFrameworkBuilt(services, sp => new ConsentInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<PageInteractionServices>()));
+        AddFrameworkBuilt(services, sp => new AccountSelectionInteraction(
+            sp.GetRequiredService<IHttpContextAccessor>(),
+            sp.GetRequiredService<PageInteractionServices>()));
         AddFrameworkBuilt(services, sp => new ProviderSignInInteraction(
             sp.GetRequiredService<IHttpContextAccessor>(),
             sp.GetRequiredService<ProviderRegistry>(),

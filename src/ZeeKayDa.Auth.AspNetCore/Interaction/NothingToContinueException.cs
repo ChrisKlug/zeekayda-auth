@@ -36,4 +36,7 @@ internal enum NothingToContinueReason
 
     /// <summary>The external sign-in parked for the interaction was already taken, or has expired.</summary>
     NothingParked,
+
+    /// <summary>The account picker was reached for an interaction that never asked for an account choice.</summary>
+    NotAccountSelection,
 }

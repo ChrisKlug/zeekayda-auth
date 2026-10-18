@@ -1681,6 +1681,88 @@ public sealed class AuthorizationServerOptionsValidatorTests
         failures.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("account/select")]
+    [InlineData("//evil.example.com/select")]
+    [InlineData("/\\evil.example.com/select")]
+    [InlineData("/account/select?x=1")]
+    [InlineData("/account/select#frag")]
+    public void Validate_rejects_malformed_interaction_SelectAccountPath(string selectAccountPath)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { SelectAccountPath = selectAccountPath } },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.select_account_path.unsafe")
+            .Which.Message.Should().Contain("Interaction.SelectAccountPath");
+    }
+
+    [Fact]
+    public void Validate_accepts_an_absolute_path_SelectAccountPath()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { SelectAccountPath = "/account/select" } },
+        });
+
+        failures.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_rejects_a_MaxSignedInAccounts_below_one(int maxSignedInAccounts)
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = maxSignedInAccounts } },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.max_signed_in_accounts.not_positive")
+            .Which.Message.Should().Contain("MaxSignedInAccounts");
+    }
+
+    [Fact]
+    public void Validate_rejects_a_MaxSignedInAccounts_above_twenty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = 21 } },
+        });
+
+        failures.Should().ContainSingle(f => f.Code == "configuration.authorization_endpoint.interaction.max_signed_in_accounts.too_large")
+            .Which.Message.Should().Contain("MaxSignedInAccounts");
+    }
+
+    [Fact]
+    public void Validate_accepts_a_MaxSignedInAccounts_of_twenty()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = 20 } },
+        });
+
+        failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_accepts_a_MaxSignedInAccounts_of_one()
+    {
+        var failures = Validate(new AuthorizationServerOptions
+        {
+            Issuer = "https://auth.example.com",
+            AuthorizationEndpoint = { Interaction = { MaxSignedInAccounts = 1 } },
+        });
+
+        failures.Should().BeEmpty();
+    }
+
     [Fact]
     public void Validate_accepts_an_absolute_path_LoginPath()
     {

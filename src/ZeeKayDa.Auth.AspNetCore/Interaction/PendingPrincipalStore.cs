@@ -19,10 +19,14 @@ internal static class PendingTicketItems
     public const string InteractionId = "zkd:interaction_id";
 
     public const string Provider = "zkd:provider";
+
+    public const string LoginIdentifier = "zkd:login_id";
+
+    public const string AddAccount = "zkd:add_account";
 }
 
-/// <summary>A parked external principal, as read back from the interaction store.</summary>
-internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider);
+/// <summary>A parked external principal, as read back from the interaction store, with the host's placement for it.</summary>
+internal sealed record PendingTicket(ClaimsPrincipal Principal, string Provider, AccountPlacement Placement);
 
 /// <summary>
 /// A principal an external provider authenticated, parked while the host's page collects more,
@@ -76,6 +80,8 @@ internal sealed class PendingPrincipalStore(
         var properties = new AuthenticationProperties { IsPersistent = false, ExpiresUtc = expiresAt };
         properties.Items[PendingTicketItems.InteractionId] = requestContext.Id;
         properties.Items[PendingTicketItems.Provider] = ticket.Provider;
+        properties.Items[PendingTicketItems.LoginIdentifier] = ticket.Placement.LoginIdentifier;
+        properties.Items[PendingTicketItems.AddAccount] = ticket.Placement.AddAccount ? "true" : null;
 
         var stored = new AuthenticationTicket(ReservedClaims.Strip(ticket.Principal), properties, ZeeKayDaCookies.Pending);
         var protectedValue = ProtectorFor(requestContext.Id, secret).Protect(TicketSerializer.Default.Serialize(stored));
@@ -183,8 +189,14 @@ internal sealed class PendingPrincipalStore(
             return null;
 
         var provider = ProviderOf(ticket);
-        return provider is null ? null : new PendingTicket(ReservedClaims.Strip(ticket.Principal), provider);
+        return provider is null ? null : new PendingTicket(ReservedClaims.Strip(ticket.Principal), provider, PlacementOf(ticket));
     }
+
+    private static AccountPlacement PlacementOf(AuthenticationTicket ticket) => new(
+        ticket.Properties.Items.TryGetValue(PendingTicketItems.LoginIdentifier, out var loginIdentifier) && !string.IsNullOrEmpty(loginIdentifier)
+            ? loginIdentifier
+            : null,
+        ticket.Properties.Items.TryGetValue(PendingTicketItems.AddAccount, out var addAccount) && addAccount == "true");
 
     private static bool IsBoundTo(AuthenticationTicket ticket, string interactionId) =>
         ticket.Properties.Items.TryGetValue(PendingTicketItems.InteractionId, out var bound)

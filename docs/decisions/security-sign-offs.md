@@ -1239,9 +1239,11 @@ scheme becomes the automatic default.
   `SignInAsync_naming_an_interaction_the_browser_is_not_carrying_is_refused`,
   `SignInAsync_after_the_interaction_has_expired_is_refused`.
 - A host cannot choose the session identifier, `amr` or `auth_time`: reserved `zkd:` claims are
-  stripped as case-insensitively as they are read. Closed — `A_host_supplied_session_id_claim_is_stripped_whatever_its_case`,
-  `A_host_supplied_amr_claim_is_stripped_whatever_its_case`,
-  `A_host_supplied_auth_time_claim_cannot_defeat_max_age`.
+  stripped as case-insensitively as they are read. Closed — A_host_supplied_session_id_claim_is_stripped_whatever_its_case,
+  A_host_supplied_amr_claim_is_stripped_whatever_its_case,
+  A_host_supplied_auth_time_claim_cannot_defeat_max_age
+  [replaced by #974 with `The_session_cookie_holds_only_the_claims_the_framework_reads`: a host passes no claims,
+  and the session cookie is written from the framework's own four].
 - The framework contributes no automatic default scheme, so an unqualified host `SignInAsync` cannot
   write the session cookie past promotion. Closed — `The_framework_contributes_no_default_authenticate_scheme`,
   `The_framework_contributes_no_default_sign_in_scheme`, `Every_principal_carrying_cookie_is_registered_as_a_scheme`.
@@ -1321,7 +1323,7 @@ ran alongside.
   reaches the client only on the single-provider path; citations repointed at those successors.]
 - The session subject is derived from provider, issuer and upstream subject, and a subject without
   an issuer is refused. Closed — `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`,
-  `A_subject_claim_without_an_issuer_is_refused_at_promotion`. [Since #984 the registration name is no longer
+  A_subject_claim_without_an_issuer_is_refused_at_promotion [renamed by #985 to `A_subject_claim_without_an_issuer_is_refused_before_the_sign_in_hook`: the refusal now happens before `OnProviderSignIn` runs]. [Since #984 the registration name is no longer
   part of the derivation — issuer and upstream subject only; the first test now proves that the OAuth default issuer, the scheme name,
   separates two OAuth registrations.]
 - A parked principal is bound to its interaction, consumed on every exit, and handed to the host as
@@ -1474,21 +1476,29 @@ Highs across two fix commits, then the maintainer's rulings verified by both age
 
 - The framework builds the promoted principal; a collected subject claim is refused before any read, and
   a replacement whose subject is the upstream one is refused, on the principal read and again on the one
-  taken. Closed — `SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read`,
+  taken. Closed — SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read
+  [replaced by #974 with `SignInAsync_promotes_the_derived_subject_with_none_of_the_providers_claims`: SignInAsync
+  takes no claims, so a page has no way to name a subject],
   `SignInWithReplacedAccountAsync_refuses_the_upstream_subject_passed_straight_back`
   [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_the_parked_principal_passed_straight_back],
-  `SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject`
+  SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject
   [renamed by #781 from SignInWithReplacedPrincipalAsync_refuses_a_copy_of_the_upstream_subject: the subject
-  is now an argument, and a subject claim beside it is refused],
+  is now an argument, and a subject claim beside it is refused]
+  [replaced by #974 with `SignInWithReplacedAccountAsync_refuses_the_upstream_subject_passed_straight_back`: the
+  method takes no claims, so the subject argument is the only one],
   `SignInWithReplacedAccountAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule`
   [renamed by #781 from SignInWithReplacedPrincipalAsync_holds_a_principal_parked_between_the_read_and_the_take_to_the_same_rule].
 - The parked principal is taken once and what was taken is promoted; refusals are decided before the take;
   caller-owned input is snapshotted; terminal calls are POST-only before any read. Closed —
   `SignInAsync_reads_the_parked_principal_to_validate_it_then_takes_it_once`,
   `SignInAsync_promotes_the_principal_parked_at_the_time_of_the_post_not_the_one_the_page_read`,
-  `SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer`,
-  `SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed`
-  [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed],
+  SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer
+  [replaced by #985 with `A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error`:
+  such a principal is now refused before OnProviderSignIn runs, so it is never parked],
+  SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed
+  [renamed by #781 from SignInWithReplacedPrincipalAsync_promotes_the_principal_as_validated_not_as_later_changed]
+  [replaced by #974 with `SignInWithReplacedAccountAsync_reports_the_authentication_methods_as_validated_not_as_later_changed`:
+  the methods are the only caller-owned input left],
   `A_terminal_call_from_a_GET_is_refused_before_anything_is_read`.
 - A local sign-in at the login page discards a parked principal and records no provider. Closed —
   `A_local_sign_in_at_the_login_page_discards_a_parked_principal_and_records_no_provider`.
@@ -2434,7 +2444,7 @@ M1 audit finding (Low, area 2), the maintainer's reading of PR #1016, and the se
   provider rename changes no user's subject and a host can compute the default subject to link an account before first sign-in. Closed —
   `Derive_is_the_same_under_two_registration_names_of_one_issuer`, `Derive_changes_when_any_part_changes`, `Derive_refuses_an_empty_part`, `Derive_separates_the_parts_by_length_so_boundaries_cannot_collide`.
 - The issuer is now the only namespace, so a subject claim carrying the default issuer is refused at promotion; every stock handler stamps one (OAuth: the scheme name, unique per registry; OIDC: `iss`). Closed —
-  `A_subject_claim_without_an_issuer_is_refused_at_promotion`, `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`.
+  A_subject_claim_without_an_issuer_is_refused_at_promotion [renamed by #985 to `A_subject_claim_without_an_issuer_is_refused_before_the_sign_in_hook`: the refusal now happens before `OnProviderSignIn` runs], `Two_providers_returning_the_same_upstream_subject_get_different_session_subjects`.
 - The host chooses an external user's subject through `OnProviderSignIn` → `SignInWithReplacedAccountAsync`; there is no separate derivation seam (maintainer).
 - **Accepted residuals (maintainer):** two registrations of one issuer share identities. Two distinct upstreams collide only if the host stamps the same `ClaimsIssuer` string on both — operator error, no test.
 ## 2026-10-17 — a PFX bundle refuses an empty password and warns of weak or absent key encryption (#989, code frozen at `90d82b3`)
@@ -2456,3 +2466,38 @@ M1 audit finding (Medium, raised independently by the authorize and provider rev
 - The hook cannot redirect the round trip or lengthen the external ticket: the framework's items, `RedirectUri`, `IssuedUtc`, `ExpiresUtc`, `IsPersistent`, `AllowRefresh` are re-stamped after it. Closed —
   `A_hook_that_overwrites_the_framework_items_still_resumes_the_interaction`, `A_hook_that_sets_ticket_lifetime_properties_does_not_extend_the_external_cookie`. One hook serves every provider — `The_hook_set_by_a_later_WithProviders_call_runs_for_a_provider_registered_by_an_earlier_one`.
 - **Accepted residuals (maintainer):** the framework trusts a provider to honour what the hook asked; it cannot verify the upstream re-authentication. A hook that pre-sets a key the remote handler adds with `Items.Add` (`code_verifier`, the OIDC code redirect) makes the challenge throw — trusted host code, not a boundary. **Not covered:** `OpenIdConnectOptions.UseTokenLifetime` lets the OIDC handler set the ticket's expiry at callback, after the re-stamp.
+## 2026-10-17 — the SSO session cookie holds only the framework's four claims, and a session subject is checked by type (#974, code frozen at `b7034e9`)
+M1 audit finding (Low, areas 2 and 3), the security agent's review (sign-off, one Low fixed) and the Claude code-lens stand-in (no findings); no Copilot lens (quota). `b32f76b` read by both reviewers; `d538dc2`, `63f8467`, `b7034e9` written and read by the main session; the maintainer reads the PR.
+- `zkd.session` holds exactly `sub`, `zkd:sid`, `zkd:auth_time` and `zkd:amr`, the claims its only reader takes; automatic promotion copies none of the provider's claims, and `additionalClaims` is gone from every page sign-in (#723). Closed —
+  `The_session_cookie_holds_only_the_claims_the_framework_reads`, `SignInAsync_promotes_the_derived_subject_with_none_of_the_providers_claims`, `A_provider_principal_with_200_claims_gives_a_one_chunk_session_cookie_holding_only_the_frameworks_claims`.
+- A session subject is 1–255 printable ASCII characters with no space (OIDC Core §2 caps `sub` at 255 ASCII; printable and no space are the framework's) and reaches the session only as `SessionSubject`, whose one factory applies the rule; a host-supplied subject that breaks it is refused at the call. Closed —
+  `From_refuses_a_subject_that_is_not_1_to_255_printable_ascii_characters`, `From_accepts_255_printable_ascii_characters`, `A_subject_outside_printable_ascii_is_refused_naming_the_argument`, `SignInWithReplacedAccountAsync_with_a_malformed_subject_is_refused_before_the_parked_principal_is_taken`.
+- Derived external subjects (43 base64url characters) always satisfy the rule — `ForPromotion_carries_the_derived_subject_and_none_of_the_providers_claims`.
+- **Not covered:** forwarding sign-in claims for a host with no user store (#1031); a page sign-in's `auth_time` is always the time of the call (#1034).
+## 2026-10-17 — an authorization request carrying an id_token_hint is answered only for the user it names (#965, code frozen at `f37a994`)
+M1 audit finding (Low, area 1), the security agent's review (sign-off, two Lows fixed) and the Claude code-lens stand-in (one Low fixed); no Copilot lens (quota). `75f52a0` read by both reviewers; `91215af`, `b69ec99` written and read by the main session; `f3d7c5a` written by the tester agent and read by the main session. Merges of main `e5a57c1`, `5afe7e2`, `5656fbf` and `f37a994` were written and read by the main session; `5656fbf` resolved the conflict with #974 by moving the completion check from `SsoSession.SubjectOf(signIn.Principal)` to `signIn.Subject.Value`. The maintainer reads the PR.
+- A non-empty `id_token_hint` must be an ID token this server signed, for this issuer, issued to the requesting client; otherwise the client is answered `invalid_request`. Its lifetime is not checked, because a client sends the token it already holds; an empty hint counts as omitted (RFC 6749 §3.1). Closed —
+  `Phase2_id_token_hint_from_another_issuer_is_invalid_request`, `Phase2_id_token_hint_signed_by_an_unknown_key_is_invalid_request`, `Phase2_id_token_hint_issued_to_another_client_is_invalid_request`, `A_hint_issued_to_another_client_is_answered_invalid_request_at_the_client`, `An_expired_id_token_hint_is_accepted`, `An_empty_id_token_hint_is_treated_as_omitted`.
+- The hint's `sub` becomes the request's required subject, and a session held by another user does not answer the request (OIDC Core §3.1.2.2 item 4): `prompt=none` gets `login_required`, and an interactive request goes to the login page, which is told the subject through `LoginRequest.RequiredSubject`. Closed —
+  `A_valid_id_token_hint_makes_its_subject_the_required_subject`, `Prompt_none_with_another_users_hint_while_a_session_is_held_is_refused_with_login_required`, `Prompt_none_with_the_session_users_hint_issues_a_code`,
+  `An_interactive_request_with_another_users_hint_reaches_the_login_page`, `The_login_page_is_told_the_subject_the_hint_names`, `The_login_page_is_told_no_required_subject_without_a_hint`.
+- A sign-in that completes as another user is refused with `login_required` before the session is promoted, so the session is left as it was. This holds on the login page, on a provider return (derived subject compared with derived subject) and on the linking page. Closed —
+  `Signing_in_as_another_user_than_the_hint_names_is_refused_with_login_required_and_leaves_the_session_unchanged`, `A_provider_return_as_another_user_than_the_hint_names_is_refused_with_login_required`, `Linking_as_another_account_than_the_hint_names_is_refused_with_login_required`,
+  `Signing_in_as_the_hinted_user_issues_a_code_for_that_user`, `A_provider_return_as_the_user_the_hint_names_issues_a_code_for_that_users_derived_subject`.
+- **Not covered:** a browser holding user B's session cannot answer a hint for user A without a fresh sign-in as A; holding several accounts in one session is #1032. `ProviderChallengeHook` decides re-authentication from the raw session, not the required subject, so a request hinting A while B holds the session reaches the provider with no re-authentication demand, and a silent upstream sign-in as B then ends in `login_required` — safe, recorded on #1032, and proven by `A_provider_return_as_another_user_than_the_hint_names_is_refused_with_login_required`.
+## 2026-10-17 — one browser holds several accounts, and a request is answered only by the account it names (#1032, code frozen at `bbbd581`)
+Issue #1032 (First project), the security agent's review (sign-off, six Lows), the architect agent's (approve, all Low) and the Claude code-lens stand-in's (one Medium, three Lows); no Copilot lens (quota). `becd492` read by all three reviewers; `2f19004`, `a716e7a`, `c3c1db7`, `300ee9f`, `d6d0219`, `bbbd581` written and read by the main session; the Medium and three Lows were ruled on, and one residual accepted, by the maintainer, who reads the PR.
+- An `id_token_hint` selects the account that answers (OIDC Core §3.1.2.2 item 4), else a `login_hint` (§3.1.2.1); a hint matching no held account sends the user to sign in, `login_required` under `prompt=none`, and #965's check still refuses a sign-in as anyone but the user an `id_token_hint` names. `prompt=login` and `max_age` are judged against the selected account. Closed —
+  `Prompt_none_with_the_hint_of_either_of_two_signed_in_accounts_issues_a_code_for_that_account`, `An_id_token_hint_naming_an_account_that_is_not_held_selects_nobody`, `A_login_hint_matches_a_subject_only_exactly_and_a_hint_naming_nobody_selects_nobody`, `Signing_in_as_another_user_than_the_hint_names_is_refused_with_login_required_and_leaves_the_session_unchanged`,
+  `Max_age_is_judged_against_the_account_the_hint_names_so_an_old_account_goes_to_the_login_page`, `ReauthenticationRequired_is_judged_against_the_account_the_hint_names_not_a_fresher_one_held`.
+- Each account keeps its session id across re-authentication and lives for the cookie lifetime from its own sign-in; no write extends another's life, and a silent answer never writes the cookie, so a background refresh cannot write back an account signed out meanwhile. Closed —
+  `Signing_in_again_as_a_held_account_keeps_its_session_id`, `An_account_past_the_cookie_lifetime_from_its_own_sign_in_is_dropped_while_a_newer_one_stays`, `Choosing_an_older_account_does_not_extend_its_life_and_the_ticket_expires_with_the_newest_account`,
+  `Ending_another_account_does_not_extend_the_life_of_those_that_remain`, `A_silent_answer_writes_no_session_cookie_so_a_refresh_cannot_undo_a_sign_out`.
+- A sign-in replaces the accounts held unless the page or `OnProviderSignIn` adds, up to `MaxSignedInAccounts` (1–20, least recently used out); a login identifier is held to the `login_hint` rule and stated by each sign-in. Closed —
+  `SignInAsync_replaces_the_previous_account_so_its_hint_is_answered_login_required`, `An_external_sign_in_with_no_hook_decision_replaces_the_accounts_held`, `Adding_past_the_limit_signs_out_the_account_signed_in_to_least_recently`, `Validate_rejects_a_MaxSignedInAccounts_above_twenty`,
+  `A_login_identifier_a_login_hint_would_be_refused_is_refused_naming_the_parameter`, `Signing_in_again_without_a_login_identifier_clears_the_one_held`.
+- The picker (`prompt=select_account`, §3.1.2.1) continues only as a held account the request accepts, re-checked from the cookie on a POST. Closed — `SelectAsync_refuses_a_subject_the_browser_does_not_hold`, `SelectAsync_refuses_an_account_that_the_id_token_hint_rules_out`, `SelectAsync_refuses_an_account_that_max_age_rules_out`, `SelectAsync_from_a_GET_is_refused_and_chooses_nobody`.
+- Consent and a logout confirmation are bound to their account's session id and subject; logout ends one account, a hint for a user not signed in here is asked about (RP-Initiated Logout §2), and sign-out-all ends whatever remains. Closed —
+  `The_consent_page_is_refused_once_the_account_that_authenticated_the_request_was_signed_out_though_another_remains`, `A_confirmation_is_refused_once_the_asked_account_was_signed_out_though_another_account_remains`, `A_valid_hint_from_a_client_that_skips_the_question_ends_only_the_hinted_account`,
+  `A_valid_hint_for_someone_other_than_the_signed_in_user_is_still_asked`, `SignOutAllAsync_ends_the_accounts_that_remain_though_the_asked_one_was_signed_out_since`.
+- **Accepted residuals (maintainer):** under `prompt=none` a registered client learns whether a `login_hint` names an account held here, one guess per request — `Prompt_none_with_a_login_hint_matching_no_account_is_answered_login_required`. A sign-in, picker choice or sign-out racing a sign-out in another tab can write a signed-out account back: the session is the cookie, and those writes are user actions — no test. **Not covered:** telling relying parties of a logout (#994).

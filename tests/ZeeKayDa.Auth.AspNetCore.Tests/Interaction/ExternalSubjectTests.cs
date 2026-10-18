@@ -46,7 +46,7 @@ public sealed class ExternalSubjectTests
         var throughAcme = ExternalSubject.ForPromotion("acme", upstream);
         var throughGlobex = ExternalSubject.ForPromotion("globex", upstream);
 
-        throughGlobex.FindFirst("sub")!.Value.Should().Be(throughAcme.FindFirst("sub")!.Value)
+        throughGlobex.Value.Should().Be(throughAcme.Value)
             .And.Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
@@ -61,7 +61,34 @@ public sealed class ExternalSubjectTests
     }
 
     [Fact]
-    public void ForPromotion_replaces_the_upstream_subject_and_keeps_the_other_claims()
+    public void Identify_reads_the_issuer_and_value_of_a_subject_mapped_to_the_name_identifier()
+    {
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, "42", ClaimValueTypes.String, "https://acme.example.net")], "acme"));
+
+        var identity = ExternalSubject.Identify("acme", upstream);
+
+        identity.Subject.Should().Be("42");
+        identity.Issuer.Should().Be("https://acme.example.net");
+    }
+
+    [Fact]
+    public void Identify_takes_the_issuer_from_the_subject_claim_never_from_an_iss_claim()
+    {
+        // A separate iss claim is not bound to the subject, and a handler may carry anything in it.
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("iss", "https://attacker.example.net", ClaimValueTypes.String, "https://acme.example.net"),
+            new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net"),
+        ], "acme"));
+
+        var identity = ExternalSubject.Identify("acme", upstream);
+
+        identity.Issuer.Should().Be("https://acme.example.net");
+    }
+
+    [Fact]
+    public void ForPromotion_carries_the_derived_subject_and_none_of_the_providers_claims()
     {
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -72,9 +99,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindAll("sub").Select(claim => claim.Value).Should().Equal(ExternalSubject.Derive("https://acme.example.net", "42"));
-        promoted.FindFirst(ClaimTypes.NameIdentifier).Should().BeNull("the upstream identifier is never carried verbatim");
-        promoted.FindFirst("email")!.Value.Should().Be("user@example.net");
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]
@@ -85,7 +110,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]
@@ -101,7 +126,7 @@ public sealed class ExternalSubjectTests
 
         var promoted = ExternalSubject.ForPromotion("acme", upstream);
 
-        promoted.FindFirst("sub")!.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
+        promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
 
     [Fact]

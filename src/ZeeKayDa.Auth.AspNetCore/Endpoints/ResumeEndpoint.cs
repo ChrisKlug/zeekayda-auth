@@ -74,17 +74,28 @@ internal sealed class ResumeEndpoint(
         var (registration, requestContext, principal) = resolved;
         ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
 
+        ExternalIdentity identity;
+        try
+        {
+            identity = ExternalSubject.Identify(registration.Name, principal);
+        }
+        catch (ZeeKayDaInteractionException ex)
+        {
+            return Fail(context, registration, ex);
+        }
+
         // The host gets a snapshot, so a reference it keeps cannot change the session afterwards.
         var signIn = new ProviderSignInContext(
+            identity,
             ReservedClaims.Snapshot(principal),
             registration.Descriptor,
             await flow.DescribeClientAsync(context, requestContext, context.RequestAborted).ConfigureAwait(false),
             requestContext.Scopes.ToImmutableArray(),
             context.RequestAborted,
-            path => outcomes.ParkAsync(context, requestContext, registration, principal, path),
+            (path, placement) => outcomes.ParkAsync(context, requestContext, new PendingTicket(principal, registration.Name, placement), path),
             () => outcomes.DenyAsync(context, requestContext, Denial.RefusedAfterProvider));
 
-        ClaimsPrincipal promoted;
+        SessionSubject promoted;
         try
         {
             if (providerOptions.Value.OnProviderSignIn is { } onProviderSignIn)
@@ -102,20 +113,17 @@ internal sealed class ResumeEndpoint(
             return Fail(context, registration, ex);
         }
 
-        await SignInPromotedAsync(context, requestContext, registration, promoted).ConfigureAwait(false);
+        // No amr: the provider told the framework nothing about how the user proved who they are.
+        var promotion = new SignIn(promoted, AuthenticationMethods: [], registration.Name, signIn.Placement);
+        await SignInPromotedAsync(context, requestContext, promotion).ConfigureAwait(false);
         return Results.Empty;
     }
 
-    /// <summary>
-    /// Signs in the promoted principal, superseding one parked by an earlier return. No <c>amr</c>:
-    /// the provider told the framework nothing about how the user proved who they are.
-    /// </summary>
-    private async Task SignInPromotedAsync(
-        HttpContext context, AuthorizationRequestContext requestContext, ProviderRegistration registration, ClaimsPrincipal promoted)
+    /// <summary>Signs in the promoted subject, superseding a principal parked by an earlier return.</summary>
+    private async Task SignInPromotedAsync(HttpContext context, AuthorizationRequestContext requestContext, SignIn promotion)
     {
         await flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
-        await outcomes.CompleteSignInAsync(context, requestContext, new SignIn(promoted, AuthenticationMethods: [], registration.Name))
-            .ConfigureAwait(false);
+        await outcomes.CompleteSignInAsync(context, requestContext, promotion).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -190,7 +198,7 @@ internal sealed class ResumeEndpoint(
             case ZeeKayDaInteractionException interaction:
                 logger.LogError(
                     interaction,
-                    "Signing in through provider {Provider} was refused at promotion.",
+                    "Signing in through provider {Provider} was refused.",
                     registration.Name);
                 break;
 

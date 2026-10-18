@@ -5,9 +5,9 @@ using ZeeKayDa.Auth.Configuration;
 namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 
 /// <summary>
-/// What <see cref="ProviderOptions.OnProviderSignIn"/> receives: the principal an external
-/// provider authenticated, the provider, the client asking, and the two ways the handler may end
-/// the request instead of letting the framework promote the principal.
+/// What <see cref="ProviderOptions.OnProviderSignIn"/> receives: who the user is at the external
+/// provider, the principal it authenticated, the provider, the client asking, and the two ways the
+/// handler may end the request instead of letting the framework promote the principal.
 /// </summary>
 /// <remarks>
 /// The raw provider ticket is not exposed, and tokens a provider saved into it with
@@ -16,19 +16,22 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </remarks>
 public sealed class ProviderSignInContext
 {
-    private readonly Func<PathString, Task> _redirect;
+    private readonly Func<PathString, AccountPlacement, Task> _redirect;
     private readonly Func<Task> _deny;
     private int _completed;
+    private string? _loginIdentifier;
 
     internal ProviderSignInContext(
+        ExternalIdentity identity,
         ClaimsPrincipal principal,
         ProviderDescriptor provider,
         ClientInformation client,
         IReadOnlyList<string> effectiveScopes,
         CancellationToken requestAborted,
-        Func<PathString, Task> redirect,
+        Func<PathString, AccountPlacement, Task> redirect,
         Func<Task> deny)
     {
+        ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(client);
@@ -36,6 +39,7 @@ public sealed class ProviderSignInContext
         ArgumentNullException.ThrowIfNull(redirect);
         ArgumentNullException.ThrowIfNull(deny);
 
+        Identity = identity;
         Principal = principal;
         Provider = provider;
         Client = client;
@@ -48,9 +52,10 @@ public sealed class ProviderSignInContext
     /// <summary>
     /// Parks <see cref="Principal"/> and sends the user to a page of the host's, to link the
     /// external identity to a local account or to collect what the provider did not supply. That
-    /// page reads the principal back with <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/> and
-    /// finishes through <see cref="ProviderSignInInteraction"/>: with the claims it collected,
-    /// or with a linked local account's own principal in place of the parked one.
+    /// page reads the principal back with <see cref="ProviderSignInInteraction.GetPendingPrincipalAsync"/>,
+    /// keeps anything it collects in the host's own store, and finishes through
+    /// <see cref="ProviderSignInInteraction"/>: for the derived subject, or for a linked local
+    /// account in its place.
     /// </summary>
     /// <param name="path">
     /// A host-relative path: absolute within the application, starting with <c>/</c>, with no
@@ -80,7 +85,7 @@ public sealed class ProviderSignInContext
         }
 
         EnsureFirstTerminalCall();
-        return _redirect(path);
+        return _redirect(path, Placement);
     }
 
     /// <summary>
@@ -114,9 +119,16 @@ public sealed class ProviderSignInContext
     }
 
     /// <summary>
-    /// A copy of the principal as the provider returned it, reserved claims removed; changes to it
-    /// are not carried into the session. To change what the session holds, redirect to a page that
-    /// finishes through <see cref="ProviderSignInInteraction"/>.
+    /// Who the user is at the provider: the key to find a linked local account by. Read from
+    /// <see cref="Principal"/>'s subject claim before this handler runs; a principal without a
+    /// usable one is refused, and the handler is never called for it.
+    /// </summary>
+    public ExternalIdentity Identity { get; }
+
+    /// <summary>
+    /// A copy of the principal as the provider returned it, reserved claims removed, for the handler
+    /// to read. The session holds none of its claims, only the subject derived from
+    /// <see cref="Identity"/>; what the host wants to keep of them belongs in its own store.
     /// </summary>
     public ClaimsPrincipal Principal { get; }
 
@@ -135,6 +147,52 @@ public sealed class ProviderSignInContext
     /// </summary>
     public CancellationToken RequestAborted { get; }
 
+    /// <summary>
+    /// Gets or sets whether the user is signed in beside the accounts this browser already holds,
+    /// instead of replacing them. Defaults to <see langword="false"/>: the previous user is signed
+    /// out, the safe choice on a shared computer.
+    /// </summary>
+    /// <remarks>
+    /// The host decides here for every external sign-in, whether the framework signs the user in
+    /// when the handler returns or a page of the host's finishes it after
+    /// <see cref="RedirectToAsync"/>: what is set when that is called goes with the parked principal.
+    /// It works as <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string)"/>
+    /// does for a local sign-in, cap included.
+    /// </remarks>
+    public bool AddAccount { get; set; }
+
+    /// <summary>
+    /// Gets or sets what the user is known by, such as the email address the provider returned:
+    /// shown on the account picker, and matched, ignoring case, against a client's <c>login_hint</c>.
+    /// Defaults to <see langword="null"/>, which uses the session subject — a derived subject, 43
+    /// characters no user recognises.
+    /// </summary>
+    /// <remarks>
+    /// Held to the rule a <c>login_hint</c> is: at most 256 characters, not blank, with no control,
+    /// line-separator or invisible formatting character. A linking page that signs in a local account
+    /// in the external user's place can give that account's own identifier instead, through
+    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// options.OnProviderSignIn = context =>
+    /// {
+    ///     context.AddAccount = true;
+    ///     context.LoginIdentifier = context.Principal.FindFirstValue(ClaimTypes.Email);
+    ///     return Task.CompletedTask;
+    /// };
+    /// </code>
+    /// </example>
+    /// <exception cref="ArgumentException">The value breaks the rule above.</exception>
+    public string? LoginIdentifier
+    {
+        get => _loginIdentifier;
+        set => _loginIdentifier = SignInArguments.LoginIdentifier(value);
+    }
+
     /// <summary>Whether a terminal method has been called.</summary>
     internal bool Completed => Volatile.Read(ref _completed) != 0;
+
+    /// <summary>How the host chose to place the account among those the browser holds.</summary>
+    internal AccountPlacement Placement => new(LoginIdentifier, AddAccount);
 }

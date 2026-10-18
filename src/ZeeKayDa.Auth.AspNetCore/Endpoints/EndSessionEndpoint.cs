@@ -25,9 +25,12 @@ namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 /// the user is not sent back to the client at all (§4).
 /// </para>
 /// <para>
-/// The user is signed out without being asked only when there is no session to end, or when a
-/// valid <c>id_token_hint</c> names the user of the current session and its client opted out of
-/// the question with <c>SkipLogoutConfirmation</c>. Everything else is confirmed first (§2).
+/// A sign-out ends one account: the one a valid <c>id_token_hint</c> names, or else the client's
+/// own — the one last signed in to or picked for it. The user is signed out without being asked
+/// only when there is no account to end, or when a valid hint names a signed-in account and its
+/// client opted out of the question with <c>SkipLogoutConfirmation</c>. Everything else — a hint
+/// for a user not signed in here included — is confirmed first (§2), and the confirmation can end
+/// every account instead.
 /// </para>
 /// </remarks>
 internal sealed class EndSessionEndpoint(
@@ -80,11 +83,17 @@ internal sealed class EndSessionEndpoint(
         var (hint, hintRejected, client) = await ResolveClientAsync(parameters, hints, clients, context.RequestAborted).ConfigureAwait(false);
         var redirect = hintRejected ? null : RedirectFor(client, parameters);
 
-        var session = await _session.ReadAsync(context).ConfigureAwait(false);
-        if (session is null || MayEndWithoutAsking(client, hint, session))
-            return await responses.SignOutAsync(context, session, redirect).ConfigureAwait(false);
+        var sessions = await _session.ReadAsync(context).ConfigureAwait(false);
+        if (sessions.IsEmpty)
+            return await responses.EndAllAsync(context, sessions, redirect).ConfigureAwait(false);
 
-        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, session.SessionId, session.Subject))
+        var hinted = hint is null ? null : sessions.Find(hint.Subject);
+        if (hinted is not null && MayEndWithoutAsking(client))
+            return await responses.EndAccountAsync(context, sessions, hinted, redirect).ConfigureAwait(false);
+
+        // A hint for a user not signed in here is asked about as no hint is (§2): the client's own account.
+        var account = hinted ?? sessions.DefaultFor(client?.ClientId)!;
+        return await AskAsync(context, new PendingSignOut(client?.ClientId, redirect, account.SessionId, account.Subject))
             .ConfigureAwait(false);
     }
 
@@ -163,14 +172,18 @@ internal sealed class EndSessionEndpoint(
         {
             if (HttpMethods.IsPost(context.Request.Method))
             {
-                await logout.SignOutAsync().ConfigureAwait(false);
+                if (await AsksForEveryAccountAsync(context).ConfigureAwait(false))
+                    await logout.SignOutAllAsync().ConfigureAwait(false);
+                else
+                    await logout.SignOutAsync().ConfigureAwait(false);
+
                 return Results.Empty;
             }
 
             var request = await logout.TryGetRequestAsync(context.RequestAborted).ConfigureAwait(false);
             return request is null
                 ? EndSessionResponses.NothingToConfirm()
-                : EndSessionResponses.Confirmation(request.Client);
+                : EndSessionResponses.Confirmation(request.Client, request.SignedInAccounts.Count);
         }
         catch (ZeeKayDaStoreException ex)
         {
@@ -180,19 +193,16 @@ internal sealed class EndSessionEndpoint(
     }
 
     /// <summary>
-    /// A valid hint for the user signed in to this browser, from a client that opted out of the
-    /// question. The hint's client is the one resolved, so the opt-out is that client's own.
+    /// Whether the client opted out of the question, for a valid hint that named a signed-in account.
+    /// The hint's client is the one resolved, so the opt-out is that client's own.
     /// </summary>
-    private static bool MayEndWithoutAsking(IClient? client, IdTokenHint? hint, SsoSessionState session) =>
-        hint is not null
-        && client is { SkipLogoutConfirmation: true }
-        && string.Equals(hint.Subject, session.Subject, StringComparison.Ordinal);
+    private static bool MayEndWithoutAsking(IClient? client) => client is { SkipLogoutConfirmation: true };
 
-    /// <summary>
-    /// The request's parameters: the query string for a GET, the form body for a POST. A POST that
-    /// is not form-encoded carries nothing this endpoint can read (§2), and is treated as carrying
-    /// nothing.
-    /// </summary>
+    /// <summary>Whether the framework's confirmation form was posted with its "every account" button.</summary>
+    private static async ValueTask<bool> AsksForEveryAccountAsync(HttpContext context) =>
+        context.Request.HasFormContentType
+        && (await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false))[EndSessionResponses.ScopeField] == EndSessionResponses.EveryAccount;
+
     private static async ValueTask<Dictionary<string, StringValues>> ReadParametersAsync(HttpContext context)
     {
         var request = context.Request;

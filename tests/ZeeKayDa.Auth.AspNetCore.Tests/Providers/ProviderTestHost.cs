@@ -97,6 +97,17 @@ internal static class ProviderTestHost
         };
     }
 
+    /// <summary>The acme provider returning exactly <paramref name="claims"/>, as a handler's own claim mapping would.</summary>
+    public static Action<OAuthOptions> ConfigureAcmeReturning(params Claim[] claims) => options =>
+    {
+        ConfigureAcme(options);
+        options.Events.OnCreatingTicket = context =>
+        {
+            context.Identity!.AddClaims(claims);
+            return Task.CompletedTask;
+        };
+    };
+
     public static HttpClient NewClient(TestWebAppFactory factory) => factory.CreateClient(new()
     {
         BaseAddress = new Uri("https://test.example.com"),
@@ -138,8 +149,8 @@ internal static class ProviderTestHost
 
         endpoints.MapPost("/account/login/cancel", (LoginInteraction login) => login.DenyAsync());
 
-        // The collect-more page: reports the parked principal; on post, adds what the form
-        // collected and lets the framework build the session principal.
+        // The collect-more page: reports the parked principal; on post, lets the framework sign in
+        // the derived subject. A real page would keep what its form collected in its own store.
         endpoints.MapGet(CollectMorePath, async (ProviderSignInInteraction signIn) =>
         {
             var pending = await signIn.GetPendingPrincipalAsync();
@@ -149,6 +160,8 @@ internal static class ProviderTestHost
                 : Results.Ok(new
                 {
                     sub = pending.Principal.FindFirstValue("sub"),
+                    identityIssuer = pending.Identity.Issuer,
+                    identitySubject = pending.Identity.Subject,
                     provider = pending.Provider.Id,
                     reservedClaims = pending.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase)),
                     identities = pending.Principal.Identities.Select(identity => identity.AuthenticationType).ToArray(),
@@ -163,12 +176,7 @@ internal static class ProviderTestHost
             return Results.Ok();
         });
 
-        // Every form field becomes a claim, so a test can pass whatever it wants refused or kept.
-        endpoints.MapPost(CollectMorePath, async (HttpContext context, ProviderSignInInteraction signIn) =>
-        {
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            await signIn.SignInAsync(form.SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty))).ToArray());
-        });
+        endpoints.MapPost(CollectMorePath, (ProviderSignInInteraction signIn) => signIn.SignInAsync());
 
         // The linking page: maps the parked principal onto a local account and signs that in.
         endpoints.MapPost(CollectMorePath + "/link", async (ProviderSignInInteraction signIn) =>
@@ -176,7 +184,7 @@ internal static class ProviderTestHost
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedAccountAsync("mapped-" + pending.Principal.FindFirstValue("sub"), AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync("mapped-" + pending.Identity.Subject, AuthenticationMethods.Password);
         });
 
         // The mistake the service exists to refuse: passing the upstream subject straight back.
@@ -185,20 +193,14 @@ internal static class ProviderTestHost
             var pending = await signIn.GetPendingPrincipalAsync()
                 ?? throw new InvalidOperationException("Nothing is parked for this page.");
 
-            await signIn.SignInWithReplacedAccountAsync(pending.Principal.FindFirstValue("sub")!, AuthenticationMethods.Password);
+            await signIn.SignInWithReplacedAccountAsync(pending.Identity.Subject, AuthenticationMethods.Password);
         });
 
-        // Linking straight from the form, without reading first: the service's own refusals. The
-        // "subject" field is the subject; every other field becomes an additional claim.
+        // Linking straight from the form's "subject" field, without reading first: the service's own refusals.
         endpoints.MapPost(CollectMorePath + "/link-direct", async (HttpContext context, ProviderSignInInteraction signIn) =>
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            var claims = form
-                .Where(field => field.Key != "subject")
-                .SelectMany(field => field.Value.Select(value => new Claim(field.Key, value ?? string.Empty)))
-                .ToArray();
-
-            await signIn.SignInWithReplacedAccountAsync(form["subject"].FirstOrDefault() ?? string.Empty, AuthenticationMethods.Password, claims);
+            await signIn.SignInWithReplacedAccountAsync(form["subject"].FirstOrDefault() ?? string.Empty, AuthenticationMethods.Password);
         });
 
         endpoints.MapPost(CollectMorePath + "/cancel", (ProviderSignInInteraction signIn) => signIn.DenyAsync());
@@ -233,9 +235,7 @@ internal static class ProviderTestHost
                 {
                     sid = result.Principal!.FindFirstValue(SsoSessionClaimTypes.SessionId),
                     sub = result.Principal.FindFirstValue("sub"),
-                    name = result.Principal.FindFirstValue("name"),
-                    dept = result.Principal.FindFirstValue("dept"),
-                    reservedClaims = result.Principal.Claims.Count(claim => claim.Type.StartsWith("zkd:", StringComparison.OrdinalIgnoreCase) && claim.Type != SsoSessionClaimTypes.SessionId && claim.Type != SsoSessionClaimTypes.AuthTime && claim.Type != SsoSessionClaimTypes.Amr),
+                    claimTypes = result.Principal.Claims.Select(claim => claim.Type).Distinct().ToArray(),
                     amr = result.Principal.FindAll(SsoSessionClaimTypes.Amr).Select(claim => claim.Value).ToArray(),
                 })
                 : Results.NotFound();

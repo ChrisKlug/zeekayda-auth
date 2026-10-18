@@ -1,4 +1,3 @@
-using System.Collections.Frozen;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -37,20 +36,15 @@ internal sealed class ProviderChallengeHook(
         ProviderRegistration registration,
         AuthenticationProperties properties)
     {
-        var session = await flow.ReadSessionAsync(context).ConfigureAwait(false);
+        var sessions = await flow.ReadSessionsAsync(context).ConfigureAwait(false);
+        var session = sessions.Select(requestContext.ClientId, requestContext.RequiredSubject, requestContext.LoginHint);
         var reauthenticationRequired = flow.RequiresReauthentication(requestContext.Prompts, requestContext.MaxAge, session);
 
         var hook = options.Value.OnProviderChallenge;
         if (hook is null)
             return reauthenticationRequired ? NotReauthenticated : null;
 
-        var challenge = new ProviderChallengeContext(
-            registration.Descriptor,
-            requestContext.Prompts.ToFrozenSet(),
-            requestContext.MaxAge,
-            requestContext.LoginHint,
-            reauthenticationRequired,
-            properties);
+        var challenge = new ProviderChallengeContext(registration.Descriptor, requestContext, reauthenticationRequired, properties);
 
         if (Invoke(hook, challenge, registration) is not { } outcome)
             return HookFailed;

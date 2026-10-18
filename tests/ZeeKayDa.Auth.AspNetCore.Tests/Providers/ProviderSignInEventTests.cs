@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
@@ -183,6 +184,56 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     }
 
     [Fact]
+    public async Task The_handler_sees_the_upstream_identity_of_a_subject_mapped_to_the_name_identifier()
+    {
+        // How the OpenID Connect handler returns a user by default: sub mapped to the
+        // name-identifier claim type, stamped with the token's issuer, and no iss claim.
+        ExternalIdentity? seen = null;
+        using var factory = NewFactory(
+            context =>
+            {
+                seen = context.Identity;
+                return Task.CompletedTask;
+            },
+            ConfigureAcmeReturning(new Claim(ClaimTypes.NameIdentifier, UpstreamSubject, ClaimValueTypes.String, "https://acme.example.net")));
+        using var client = NewClient(factory);
+
+        await ResumeAsync(client);
+
+        seen.Should().NotBeNull();
+        seen!.Subject.Should().Be(UpstreamSubject);
+        seen.Issuer.Should().Be("https://acme.example.net");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(ClaimsIdentity.DefaultIssuer)]
+    public async Task A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error(string? subjectIssuer)
+    {
+        // No subject at all, or one carrying the default issuer: nothing to identify the user by,
+        // so the handler cannot park it for a linking page.
+        Claim[] returned = subjectIssuer is null
+            ? [new Claim("name", "Upstream User", ClaimValueTypes.String, "acme")]
+            : [new Claim("sub", UpstreamSubject, ClaimValueTypes.String, subjectIssuer)];
+        var called = false;
+        using var factory = NewFactory(
+            context =>
+            {
+                called = true;
+                return context.RedirectToAsync(CollectMorePath);
+            },
+            ConfigureAcmeReturning(returned));
+        using var client = NewClient(factory);
+
+        var (_, resume) = await ResumeAsync(client);
+
+        called.Should().BeFalse();
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        StoreEntryCount(factory).Should().Be(1, "only the interaction's context is stored; nothing was parked");
+    }
+
+    [Fact]
     public async Task RequestAborted_is_signalled_when_the_browser_disconnects_during_the_handler()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -306,6 +357,24 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     }
 
     [Fact]
+    public async Task The_host_page_reads_back_the_identity_the_handler_saw()
+    {
+        ExternalIdentity? seen = null;
+        _fixture.OnProviderSignIn = context =>
+        {
+            seen = context.Identity;
+            return context.RedirectToAsync(CollectMorePath);
+        };
+        using var client = _fixture.NewFlowClient();
+        var (_, resume) = await ResumeAsync(client);
+
+        var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
+
+        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be("acme");
+        pending.GetProperty("identitySubject").GetString().Should().Be(seen.Subject).And.Be(UpstreamSubject);
+    }
+
+    [Fact]
     public async Task The_parked_principal_keeps_the_providers_identities()
     {
         // Every identity the provider returned, with its authentication type, comes back as it
@@ -325,67 +394,32 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     // ── Finishing on the host page ────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task SignInAsync_with_collected_claims_promotes_the_derived_subject_with_the_providers_claims_and_the_collected_ones()
+    public async Task SignInAsync_promotes_the_derived_subject_with_none_of_the_providers_claims()
     {
-        // The page never sees or passes a subject: the session holds what an external sign-in
-        // with no page involved would hold, plus what the page collected.
+        // The page never sees or passes a subject: the session is the one an external sign-in
+        // with no page involved would establish.
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
         using var client = NewClient(factory);
         var (_, resume) = await ResumeAsync(client);
         var collectMore = resume.Headers.Location!.OriginalString;
 
-        var signIn = await client.PostAsync(collectMore, Form(("dept", "sales")), Cancellation);
+        var signIn = await client.PostAsync(collectMore, Form(), Cancellation);
 
         signIn.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
         session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject), "the upstream subject never enters the session");
-        session.GetProperty("name").GetString().Should().Be("Upstream User", "the provider's claims come along");
-        session.GetProperty("dept").GetString().Should().Be("sales", "the collected claim is added");
+        session.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount], "the provider's name claim stays out");
         session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
         (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
         StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");
     }
 
-    [Fact]
-    public async Task SignInAsync_with_no_collected_claims_promotes_the_parked_principal_as_it_is()
-    {
-        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
-        using var client = _fixture.NewFlowClient();
-        var (_, resume) = await ResumeAsync(client);
-
-        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
-
-        signIn.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
-    }
-
     [Theory]
-    [InlineData("sub")]
-    [InlineData("SUB")]
-    [InlineData(System.Security.Claims.ClaimTypes.NameIdentifier)]
-    public async Task SignInAsync_with_collected_claims_refuses_a_subject_claim_before_anything_is_read(string claimType)
-    {
-        // The whole point of the page's own service: a page cannot put a subject of its choosing,
-        // the raw upstream one included, into the session through the collected claims. The store
-        // is made to fail after the park, so a refusal that reached it would surface as a store
-        // fault instead of the argument error.
-        var store = new FaultableInteractionStore();
-        using var factory = NewFaultableFactory(store);
-        using var client = NewClient(factory);
-        var (_, resume) = await ResumeAsync(client);
-        var collectMore = resume.Headers.Location!.OriginalString;
-        store.FailPendingReads = true;
-
-        var signIn = async () => await client.PostAsync(collectMore, Form((claimType, "chosen")), Cancellation);
-
-        await signIn.Should().ThrowAsync<ArgumentException>();
-        store.FailPendingReads = false;
-        (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
-        (await ReadJsonAsync(client, collectMore)).Should().NotBeNull("the parked principal is still there to finish with");
-    }
-
-    [Fact]
-    public async Task SignInWithReplacedAccountAsync_with_a_blank_subject_is_refused_before_the_parked_principal_is_taken()
+    [InlineData(" ")]
+    [InlineData("local 1")]
+    [InlineData("lokal-ä")]
+    public async Task SignInWithReplacedAccountAsync_with_a_malformed_subject_is_refused_before_the_parked_principal_is_taken(string subject)
     {
         // A replacement the session would refuse must not cost the page the parked principal it
         // needs to try again.
@@ -395,9 +429,9 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var (interactionId, resume) = await ResumeAsync(client);
         store.FailPendingReads = true;
 
-        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("subject", " ")), Cancellation);
+        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("subject", subject)), Cancellation);
 
-        await signIn.Should().ThrowAsync<ArgumentException>();
+        (await signIn.Should().ThrowAsync<ArgumentException>()).Which.ParamName.Should().Be("subject");
         store.FailPendingReads = false;
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
         (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the parked principal is still there to finish with");
@@ -416,7 +450,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var reads = store.PendingReads;
         var removes = store.PendingRemoves;
 
-        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("dept", "sales")), Cancellation);
+        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
 
         signIn.ShouldHaveReachedConsent();
         (store.PendingReads - reads).Should().Be(2);
@@ -424,7 +458,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     }
 
     [Fact]
-    public async Task SignInWithReplacedAccountAsync_holds_the_additional_claims_as_validated_not_as_later_changed()
+    public async Task SignInWithReplacedAccountAsync_reports_the_authentication_methods_as_validated_not_as_later_changed()
     {
         // A host that keeps a reference to the array it passed and changes it while the store is
         // awaited signs in what was validated, not the change.
@@ -446,11 +480,11 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
                 MapHostPages(endpoints);
                 endpoints.MapPost(CollectMorePath + "/link-mutating", async (ProviderSignInInteraction signIn) =>
                 {
-                    var claims = new[] { new System.Security.Claims.Claim("dept", "sales") };
+                    var methods = new[] { ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password };
 
-                    var signingIn = signIn.SignInWithReplacedAccountAsync("local-1", ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password, claims);
+                    var signingIn = signIn.SignInWithReplacedAccountAsync("local-1", methods);
                     await entered.Task;
-                    claims[0] = new System.Security.Claims.Claim("dept", "hijacked");
+                    methods[0] = " ";
                     proceed.SetResult();
                     await signingIn;
                 });
@@ -468,7 +502,8 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         signIn.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
         session.GetProperty("sub").GetString().Should().Be("local-1");
-        session.GetProperty("dept").GetString().Should().Be("sales");
+        session.GetProperty("amr").EnumerateArray().Select(element => element.GetString())
+            .Should().Equal(ZeeKayDa.Auth.Authorization.AuthenticationMethods.Password);
     }
 
     [Fact]
@@ -485,23 +520,6 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*upstream subject*");
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull("nothing was promoted");
         (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the parked principal is still there to finish with");
-    }
-
-    [Theory]
-    [InlineData("sub")]
-    [InlineData(System.Security.Claims.ClaimTypes.NameIdentifier)]
-    public async Task SignInWithReplacedAccountAsync_refuses_an_additional_claim_naming_the_subject(string claimType)
-    {
-        // The upstream subject smuggled in beside a local one is the same bypass with an extra
-        // step: no claim among the additions may name the subject at all.
-        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
-        using var client = _fixture.NewFlowClient();
-        var (interactionId, resume) = await ResumeAsync(client);
-
-        var signIn = async () => await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("subject", "local-1"), (claimType, UpstreamSubject)), Cancellation);
-
-        await signIn.Should().ThrowAsync<ArgumentException>();
-        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull();
     }
 
     [Fact]
@@ -616,22 +634,6 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     }
 
     [Fact]
-    public async Task Reserved_claims_among_the_collected_ones_are_stripped()
-    {
-        _fixture.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
-        using var client = _fixture.NewFlowClient();
-        var (_, resume) = await ResumeAsync(client);
-
-        var signIn = await client.PostAsync(resume.Headers.Location!.OriginalString, Form(("zkd:sid", "forged"), ("ZKD:amr", "forged")), Cancellation);
-
-        signIn.ShouldHaveReachedConsent();
-        var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sid").GetString().Should().NotBe("forged");
-        session.GetProperty("amr").EnumerateArray().Should().BeEmpty();
-        session.GetProperty("reservedClaims").GetInt32().Should().Be(0);
-    }
-
-    [Fact]
     public async Task SignInWithReplacedAccountAsync_promotes_the_replacement_and_consumes_the_parked_one()
     {
         using var factory = NewFactory(context => context.RedirectToAsync(CollectMorePath));
@@ -659,7 +661,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
         var interactionId = InteractionIdFrom(handoff);
 
-        using var collected = await client.PostAsync(WithInteractionId(CollectMorePath, interactionId), Form(("dept", "sales")), Cancellation);
+        using var collected = await client.PostAsync(WithInteractionId(CollectMorePath, interactionId), Form(), Cancellation);
         using var linked = await client.PostAsync(WithInteractionId(CollectMorePath + "/link-direct", interactionId), Form(("subject", "local-1")), Cancellation);
 
         await collected.ShouldHaveFoundNothingToContinueAsync();
@@ -715,29 +717,6 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         await cancel.Should().ThrowAsync<InvalidOperationException>();
         (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
         StoreEntryCount(factory).Should().Be(2, "nothing was consumed or discarded");
-    }
-
-    [Fact]
-    public async Task SignInAsync_with_collected_claims_refuses_a_parked_subject_without_an_issuer()
-    {
-        // The same rule promotion applies with no page involved: the derived subject needs the
-        // issuer, and a parked principal without one cannot be finished through the collected
-        // claims. It stays parked, and the interaction survives for the login page.
-        using var factory = new TestWebAppFactory(
-            configureBuilder: builder => builder.WithProviders(
-                auth => AddHandWritten(auth, options => options.SubjectWithoutIssuer = true),
-                options => options.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath)),
-            mapEndpoints: MapHostPages);
-        using var client = NewClient(factory);
-        var handoff = await client.GetAsync(AuthorizeUrl(), Cancellation);
-        var interactionId = InteractionIdFrom(handoff);
-        var resume = await ResumeThroughHandWrittenAsync(client, interactionId);
-
-        var signIn = async () => await client.PostAsync(resume.Headers.Location!.OriginalString, Form(), Cancellation);
-
-        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*issuer*");
-        (await ReadJsonAsync(client, "/test/session")).Should().BeNull();
-        (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString)).Should().NotBeNull("the refusal was decided before the parked principal was taken");
     }
 
     [Fact]
