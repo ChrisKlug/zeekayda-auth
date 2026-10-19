@@ -336,6 +336,9 @@ internal static class ProviderTestHost
         /// <summary>Create the subject claim without an issuer.</summary>
         public bool SubjectWithoutIssuer { get; set; }
 
+        /// <summary>Stamp the scheme name as the subject's issuer, as a handler with no <c>ClaimsIssuer</c> does.</summary>
+        public bool SubjectIssuedAsScheme { get; set; }
+
         /// <summary>Return <see langword="false"/> from the callback.</summary>
         public bool DeclineCallback { get; set; }
 
@@ -394,7 +397,9 @@ internal static class ProviderTestHost
             var properties = _state.Unprotect(_context.Request.Query["state"])
                 ?? throw new InvalidOperationException("The state did not unprotect.");
 
-            var issuer = settings.SubjectWithoutIssuer ? ClaimsIdentity.DefaultIssuer : HandWrittenIssuer;
+            var issuer = settings.SubjectWithoutIssuer ? ClaimsIdentity.DefaultIssuer
+                : settings.SubjectIssuedAsScheme ? _scheme.Name
+                : HandWrittenIssuer;
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim("sub", HandWrittenSubject, ClaimValueTypes.String, issuer)], _scheme.Name));
 

@@ -912,6 +912,38 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
     }
 
     [Fact]
+    public async Task A_subject_claim_issued_under_the_registration_name_by_a_handler_with_no_ClaimsIssuer_is_refused()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            AddHandWritten(auth, options => options.SubjectIssuedAsScheme = true)));
+        using var client = NewClient(factory);
+
+        var resume = await RoundTripAsync(client, "hand");
+
+        resume.StatusCode.Should().Be(HttpStatusCode.BadRequest, "a rename would re-identify every user");
+        (await resume.Content.ReadAsStringAsync(Cancellation)).Should().Contain("server_error");
+        (await ReadSessionAsync(client)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_OAuth_provider_whose_ClaimsIssuer_is_its_registration_name_signs_in()
+    {
+        // As a provider package presetting ClaimsIssuer to its default scheme name does.
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+            auth.AddOAuth("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.ClaimsIssuer = "acme";
+            })));
+        using var client = NewClient(factory);
+
+        var resume = await RoundTripAsync(client);
+
+        resume.ShouldHaveReachedConsent();
+        (await ReadSessionAsync(client))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+    }
+
+    [Fact]
     public async Task A_handler_that_signs_in_and_then_fails_leaves_no_ticket_to_resume()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>

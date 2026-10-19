@@ -208,12 +208,10 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
     [Theory]
     [InlineData(null)]
     [InlineData(ClaimsIdentity.DefaultIssuer)]
-    [InlineData("acme")]
-    [InlineData("ACME")]
     public async Task A_principal_without_a_usable_subject_never_reaches_the_handler_and_renders_the_local_error(string? subjectIssuer)
     {
-        // No subject at all, or one whose issuer is the default or the registration name: nothing
-        // stable to identify the user by, so the handler cannot park it for a linking page.
+        // No subject at all, or one carrying the default issuer: nothing to identify the user by,
+        // so the handler cannot park it for a linking page.
         Claim[] returned = subjectIssuer is null
             ? [new Claim("name", "Upstream User", ClaimValueTypes.String, "acme")]
             : [new Claim("sub", UpstreamSubject, ClaimValueTypes.String, subjectIssuer)];

@@ -15,21 +15,29 @@ public static class ExternalSubject
     internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
     /// <summary>The session subject for an external principal: the derived one, never the upstream value.</summary>
+    /// <param name="providerId">The provider's registration name.</param>
+    /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
+    /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, or its subject claim names no issuer.
+    /// The principal carries no subject claim, its subject claim names no issuer, or, with no
+    /// <paramref name="claimsIssuer"/> set, its issuer is the registration name.
     /// </exception>
-    internal static SessionSubject ForPromotion(string providerId, ClaimsPrincipal principal)
+    internal static SessionSubject ForPromotion(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
-        var identity = Identify(providerId, principal);
+        var identity = Identify(providerId, claimsIssuer, principal);
 
         return SessionSubject.From(Derive(identity.Issuer, identity.Subject));
     }
 
     /// <summary>The upstream identity of a principal the framework will promote or park.</summary>
+    /// <param name="providerId">The provider's registration name.</param>
+    /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
+    /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, or its subject claim names no issuer.
+    /// The principal carries no subject claim, its subject claim names no issuer, or, with no
+    /// <paramref name="claimsIssuer"/> set, its issuer is the registration name.
     /// </exception>
-    internal static ExternalIdentity Identify(string providerId, ClaimsPrincipal principal)
+    internal static ExternalIdentity Identify(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
         ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentNullException.ThrowIfNull(principal);
@@ -49,8 +57,8 @@ public static class ExternalSubject
                 "the subject together. Create the claim with its issuer set.");
         }
 
-        // A handler without ClaimsIssuer stamps its scheme name, which a rename would change.
-        if (string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase))
+        // A handler without ClaimsIssuer stamps its scheme name, which a rename would change; a set one is stable.
+        if (string.IsNullOrWhiteSpace(claimsIssuer) && string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase))
         {
             throw new ZeeKayDaInteractionException(
                 $"The subject claim provider '{providerId}' returned has the provider's registration name " +
