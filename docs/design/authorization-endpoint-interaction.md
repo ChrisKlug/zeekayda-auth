@@ -569,8 +569,11 @@ base64url(SHA-256 over the length-prefixed pair of the subject claim's `Issuer` 
 sub)): collision-resistant, with length prefixes leaving no separator to collide
 on; fixed-length, well inside the 255-character `sub` limit; stable for the life of the upstream
 account. The issuer is framework-visible for every handler: a JWT-validating handler stamps the
-validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which defaults to
-the scheme name, and a hand-written handler sets it when it creates the claim. A registration that
+validated token issuer onto each claim, an OAuth handler stamps `ClaimsIssuer`, which startup
+requires because it would otherwise fall back to the scheme name, and a hand-written handler sets it
+when it creates the claim. A subject claim carrying the registration name as its issuer, from a
+handler that sets no `ClaimsIssuer`, is refused like one carrying `ClaimsIdentity.DefaultIssuer`:
+it is the fallback, and a rename would change it. A registration that
 validates several issuers therefore separates its users by issuer rather than by promise. A
 subject claim carrying `ClaimsIdentity.DefaultIssuer` names no namespace, and `/connect/resume`
 refuses it before `OnProviderSignIn` runs, as it does a principal with no subject, with a message
