@@ -106,6 +106,22 @@ public sealed class EndpointRateLimitingStartupFilterTests
     }
 
     [Fact]
+    public async Task A_host_without_routing_that_maps_nothing_starts()
+    {
+        using var host = new HostBuilder()
+            .UseEnvironment(Environments.Production)
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(AddZeeKayDaAuth)
+                .Configure(_ => { }))
+            .Build();
+
+        var start = () => host.StartAsync(Cancellation);
+
+        await start.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task A_policy_on_a_host_group_around_MapZeeKayDaAuth_starts_without_the_warning()
     {
         var logs = await StartAsync(

@@ -42,8 +42,12 @@ internal sealed class EndpointRateLimitingStartupFilter(
     {
         next(app);
 
+        // A host without routing has mapped nothing to check.
+        if (app.ApplicationServices.GetService<EndpointDataSource>() is not { } endpoints)
+            return;
+
         var context = new StartupVerificationContext();
-        Verify(context, app.ApplicationServices.GetRequiredService<EndpointDataSource>());
+        Verify(context, endpoints);
         foreach (var warning in context.Warnings)
             StartupVerificationHostedService.LogWarning(app.ApplicationServices, this, Name, warning);
     };
