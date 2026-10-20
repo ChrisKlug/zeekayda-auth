@@ -19,8 +19,8 @@ public static class ExternalSubject
     /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
     /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, its subject claim names no issuer, or, with no
-    /// <paramref name="claimsIssuer"/> set, its issuer is the registration name.
+    /// The principal carries no subject claim, its subject claim names no issuer, or its issuer is the
+    /// registration name and not exactly <paramref name="claimsIssuer"/>.
     /// </exception>
     internal static SessionSubject ForPromotion(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
@@ -34,8 +34,8 @@ public static class ExternalSubject
     /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
     /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, its subject claim names no issuer, or, with no
-    /// <paramref name="claimsIssuer"/> set, its issuer is the registration name.
+    /// The principal carries no subject claim, its subject claim names no issuer, or its issuer is the
+    /// registration name and not exactly <paramref name="claimsIssuer"/>.
     /// </exception>
     internal static ExternalIdentity Identify(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
@@ -57,12 +57,12 @@ public static class ExternalSubject
                 "the subject together. Create the claim with its issuer set.");
         }
 
-        // A handler without ClaimsIssuer stamps its scheme name, which a rename would change; a set one is stable.
-        if (string.IsNullOrWhiteSpace(claimsIssuer) && string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(subject.Issuer, claimsIssuer, StringComparison.Ordinal))
         {
             throw new ZeeKayDaInteractionException(
                 $"The subject claim provider '{providerId}' returned has the provider's registration name " +
-                "as its issuer, which a handler stamps when its ClaimsIssuer is not set. The session subject " +
+                "as its issuer, the value a handler falls back to without a ClaimsIssuer. The session subject " +
                 "is derived from the issuer, so renaming the registration would give every user a new subject. " +
                 "Set ClaimsIssuer on the provider's options to a value naming the upstream identity provider, " +
                 "and never reuse it for a different provider.");

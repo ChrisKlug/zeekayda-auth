@@ -165,9 +165,10 @@ public sealed class ExternalSubjectTests
     [InlineData("acme", null)]
     [InlineData("Acme", null)]
     [InlineData("acme", " ")]
-    public void Identify_refuses_a_subject_issued_under_the_registration_name_when_no_ClaimsIssuer_is_set(string issuer, string? claimsIssuer)
+    [InlineData("acme", "https://acme.example.net")]
+    public void Identify_refuses_a_subject_issued_under_the_registration_name_unless_ClaimsIssuer_is_that_name(string issuer, string? claimsIssuer)
     {
-        // What a handler without ClaimsIssuer stamps: a rename would re-identify every user.
+        // The fallback, or a handler ignoring the ClaimsIssuer it was given: a rename would re-identify every user.
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim("sub", "42", ClaimValueTypes.String, issuer)], "acme"));
 

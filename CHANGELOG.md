@@ -12,8 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   every user** (#1029). An external user's subject is derived from the issuer of their subject claim,
   and an OAuth handler stamps `ClaimsIssuer`, else the registration name. A provider on `OAuthOptions`
   without one now fails startup with `provider.claims_issuer_required`, and a sign-in through any
-  handler that sets no `ClaimsIssuer` and stamps the registration name as its subject claim's issuer
-  is refused. Name the
+  handler whose subject claim's issuer is the registration name is refused, unless `ClaimsIssuer` is
+  set to exactly that value. Name the
   upstream identity provider, such as by its issuer URL, and never reuse the value for a different
   provider. OpenID Connect providers are unaffected: they stamp the ID token's issuer.
 - **One browser can be signed in to several accounts, and a request is answered only by the account

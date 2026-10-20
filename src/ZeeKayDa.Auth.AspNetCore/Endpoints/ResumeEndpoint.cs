@@ -74,13 +74,14 @@ internal sealed class ResumeEndpoint(
         var (registration, requestContext, principal) = resolved;
         ProviderChallengeCookie.Clear(context, EndpointRouteHelper.GetIssuerUri(options), registration, requestContext.Id);
 
-        var claimsIssuer = HandlerOptions.ClaimsIssuerOf(context.RequestServices, registration);
+        string? claimsIssuer;
         ExternalIdentity identity;
         try
         {
+            claimsIssuer = HandlerOptions.ClaimsIssuerOf(context.RequestServices, registration);
             identity = ExternalSubject.Identify(registration.Name, claimsIssuer, principal);
         }
-        catch (ZeeKayDaInteractionException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Fail(context, registration, ex);
         }

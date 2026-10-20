@@ -105,10 +105,6 @@ internal sealed class HandlerOptionsActivator(
         return string.IsNullOrWhiteSpace(oauth.ClaimsIssuer) ? ClaimsIssuerRequired(name) : null;
     }
 
-    /// <summary>
-    /// An OAuth handler stamps its claims with <c>ClaimsIssuer</c>, else the registration name, and the
-    /// external subject is derived from that issuer: unset, a rename would re-identify every user.
-    /// </summary>
     private static ZeeKayDaConfigurationFailure ClaimsIssuerRequired(string name) =>
         new(
             "provider.claims_issuer_required",
