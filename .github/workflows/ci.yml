@@ -57,6 +57,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -107,9 +108,22 @@ jobs:
       # measures everything each test project loads, and this artifact is the baseline the
       # coverage-regression gate compares against. The property is off by default so a local
       # `dotnet test` is not instrumented — see tests/*/*.Tests.csproj.
+      # --blame-hang-timeout kills a test that runs five minutes and logs its name; without it a hang
+      # holds the job until timeout-minutes. A mini dump still has every thread's managed stack.
       - name: Test
         if: needs.detect-changes.outputs.non-docs == 'true'
-        run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults -p:EnableCoverage=true
+        run: dotnet test ${{ env.SOLUTION }} --no-build --configuration Release --collect:"XPlat Code Coverage" --results-directory ./TestResults -p:EnableCoverage=true --blame-hang-timeout 5m --blame-hang-dump-type mini
+
+      - name: Upload hang dump-${{ matrix.os }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && needs.detect-changes.outputs.non-docs == 'true'
+        with:
+          name: hang-dump-${{ runner.os }}
+          path: |
+            ./TestResults/**/*.dmp
+            ./TestResults/**/Sequence_*.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload coverage-${{ matrix.os }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -127,6 +141,7 @@ jobs:
     name: Coverage Regression
     needs: detect-changes
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event_name == 'pull_request' && needs.detect-changes.outputs.non-docs == 'true'
     permissions:
       contents: read
@@ -164,7 +179,7 @@ jobs:
           while IFS= read -r package; do
             dotnet test "tests/${package}.Tests/" \
               --no-build --configuration Release \
-              --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr \
+              --collect:"XPlat Code Coverage" --results-directory ./TestResults/pr --blame-hang-timeout 5m --blame-hang-dump-type none \
               -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Include="[${package}]*"
           done < <(dotnet run .github/scripts/discover_coverage_projects.cs -- .)
 
@@ -220,6 +235,7 @@ jobs:
     name: Analyzer Tests
     needs: detect-changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: needs.detect-changes.outputs.non-docs == 'true'
 
     # ZeeKayDa.Auth.Analyzers and its test project are deliberately outside ZeeKayDa.Auth.slnx —
@@ -252,7 +268,7 @@ jobs:
         run: dotnet build tests/ZeeKayDa.Auth.Analyzers.Tests/ZeeKayDa.Auth.Analyzers.Tests.csproj --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test tests/ZeeKayDa.Auth.Analyzers.Tests/ZeeKayDa.Auth.Analyzers.Tests.csproj --no-build --configuration Release
+        run: dotnet test tests/ZeeKayDa.Auth.Analyzers.Tests/ZeeKayDa.Auth.Analyzers.Tests.csproj --no-build --configuration Release --blame-hang-timeout 5m --blame-hang-dump-type none
 
   coverage-regression-script-tests:
     name: Coverage Regression Script Tests

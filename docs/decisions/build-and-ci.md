@@ -40,4 +40,10 @@ rules in `.claude/agents/developer.md`. Comments drifted back to verbose after e
 written rule alone did not hold them. It stays a warning because a permanent *why* can be long; the
 author says so in the PR. XML docs and `log-hygiene-ok` justifications are not counted.
 
+**A test running five minutes is killed and named.** Every `dotnet test` in CI passes
+`--blame-hang-timeout 5m`, so a hang fails that test project with the test's name in the log rather
+than holding the job for GitHub's six-hour default; each test job also sets `timeout-minutes`.
+`build-and-test` writes a mini dump (every thread's managed stack, tens of MB rather than hundreds)
+and uploads it with the blame sequence file as `hang-dump-<OS>`.
+
 ## Tried, didn't work
