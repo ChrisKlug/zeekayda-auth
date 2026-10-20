@@ -16,6 +16,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   set to exactly that value. Name the
   upstream identity provider, such as by its issuer URL, and never reuse the value for a different
   provider. OpenID Connect providers are unaffected: they stamp the ID token's issuer.
+- **Two OAuth providers sharing a `ClaimsIssuer` must share an upstream** (#1045). The issuer
+  namespaces a user's subject, so two `OAuthOptions` providers with one `ClaimsIssuer` but different
+  upstreams gave user `42` at each the same subject. Providers sharing a `ClaimsIssuer` (compared
+  exactly) at different `TokenEndpoint`s now fail startup with `provider.claims_issuer_shared`;
+  registrations of one upstream, at one token endpoint, still share their users' identities.
 - **One browser can be signed in to several accounts, and a request is answered only by the account
   it names** (#1032). `zkd.session` holds a list of accounts, each with its own session identifier,
   authentication time, methods and optional login identifier. An `id_token_hint` or `login_hint`
