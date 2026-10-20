@@ -107,7 +107,7 @@ ZeeKayDa.Auth.AspNetCore.Interaction.ProviderSignInContext.LoginIdentifier.set -
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.Equals(object? obj) -> bool
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.GetHashCode() -> int
 override ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.ToString() -> string!
-static Microsoft.AspNetCore.Builder.ZeeKayDaAuthEndpointRouteBuilderExtensions.MapZeeKayDaAuth(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints) -> Microsoft.AspNetCore.Routing.IEndpointRouteBuilder!
+static Microsoft.AspNetCore.Builder.ZeeKayDaAuthEndpointRouteBuilderExtensions.MapZeeKayDaAuth(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints) -> Microsoft.AspNetCore.Builder.IEndpointConventionBuilder!
 static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.NotValid() -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!
 static ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult.Valid() -> ZeeKayDa.Auth.AspNetCore.ClientAuthentication.ClientAuthenticationResult!
 static ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails.operator !=(ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? left, ZeeKayDa.Auth.AspNetCore.Interaction.AuthorizationErrorDetails? right) -> bool

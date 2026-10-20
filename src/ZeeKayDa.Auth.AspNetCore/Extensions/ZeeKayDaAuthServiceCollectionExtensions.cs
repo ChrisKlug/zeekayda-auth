@@ -151,6 +151,10 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
 
+        services.TryAddSingleton<MappedFrameworkEndpoints>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IStartupActivator, EndpointRateLimitingActivator>());
+
         // The composite as its concrete type, so it cannot dispatch to itself.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IClientAuthenticator, ClientSecretAuthenticator>());

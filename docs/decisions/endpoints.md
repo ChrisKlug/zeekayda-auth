@@ -50,6 +50,11 @@ default. The second writes the configured security headers, and advertises
 routes. `AllowHttpLoopbackIssuer` is a loopback development hatch, never an assertion that the
 deployment is safe.
 
+**Rate limiting is the host's, attached to the group as `MapZeeKayDaAuth()` returns it** — an
+`IEndpointConventionBuilder`, never a `RouteGroupBuilder` that would let a host map routes inside
+the filters. No framework policy fits every deployment's proxy, instance count and upstream limiter.
+Outside Development, startup warns when an endpoint has neither a policy nor a global limiter.
+
 **Endpoint URIs must share the issuer's authority, and the issuer must be canonical.** Startup
 rejects a cross-authority `AuthorizationEndpoint.Uri`, `TokenEndpoint.Uri`, `JwksEndpoint.Uri` or
 `EndSessionEndpoint.Uri` outright rather than gating it behind an opt-in — metadata integrity is the whole point of the
@@ -80,10 +85,8 @@ only the issuer's path prefix reaches both documents alike. Rejecting
 path-based issuers would have been simpler but silently breaks a spec-permitted multi-tenant
 pattern, and path-based issuers are what RFC 9207 mix-up resistance relies on in those deployments.
 
-**Map-time and startup-time issuer errors are the same error.** `MapZeeKayDaAuth()` runs the same
-options check as the startup gate before it reads `AuthorizationServerOptions`, so a bad issuer
-surfaces at map time in the same coded `ZeeKayDaConfigurationException`, together with every other
-registered options type's failures.
+**Map-time and startup-time issuer errors are the same error.** `MapZeeKayDaAuth()` runs the startup
+options check first, so a bad issuer throws the same coded exception, listing every options failure.
 
 **The issuer is immutable after startup.** Endpoints resolve `IOptions<T>`, never
 `IOptionsSnapshot`/`IOptionsMonitor`. Changing an issuer at runtime invalidates every outstanding
@@ -135,9 +138,6 @@ all, being deprecated there and a live credential in logs and referrers, and pre
 ways at once is `invalid_request`. A separate `OPTIONS` route answers the CORS preflight that a
 browser sends before any request carrying an `Authorization` header, with no
 `Access-Control-Allow-Credentials` — which is what keeps the default wildcard origin safe.
-
-**Every protocol endpoint is implemented; nothing answers `501` any more.** Routes were mapped and
-shaped before their implementations landed so discovery stayed stable; the last stub is gone.
 
 **The JWKS response is derived lazily from the ring's current key set, keyed by reference
 equality — not maintained by an observer.** Under the read-once ring the body is fixed for the
