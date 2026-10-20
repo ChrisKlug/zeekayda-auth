@@ -33,6 +33,14 @@ public sealed class ProviderHostIntegrationTests
         options.TokenEndpoint = "https://acme.example.net/token";
     }
 
+    private static void ConfigureAcmeLeavingClaimsIssuer(OAuthOptions options, string tokenEndpoint)
+    {
+        options.ClientId = "acme-client";
+        options.ClientSecret = "acme-secret";
+        options.AuthorizationEndpoint = "https://acme.example.net/authorize";
+        options.TokenEndpoint = tokenEndpoint;
+    }
+
     private static TestWebAppFactory NewFactory(
         Action<AuthorizationServerOptions>? configureOptions = null,
         Action<ZeeKayDaAuthBuilder>? configureBuilder = null) =>
@@ -657,6 +665,20 @@ public sealed class ProviderHostIntegrationTests
     }
 
     [Fact]
+    public void Two_registrations_left_on_a_provider_packages_preset_ClaimsIssuer_at_different_token_endpoints_fail_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth<PresetAcmeOAuthOptions, OAuthHandler<PresetAcmeOAuthOptions>>(
+                "acme", options => ConfigureAcmeLeavingClaimsIssuer(options, "https://acme.example.net/token"));
+            auth.AddOAuth<PresetAcmeOAuthOptions, OAuthHandler<PresetAcmeOAuthOptions>>(
+                "acme-enterprise", options => ConfigureAcmeLeavingClaimsIssuer(options, "https://acme.corp.example/token"));
+        }));
+
+        ShouldFailStartupWith(factory, "provider.claims_issuer_shared");
+    }
+
+    [Fact]
     public void Every_OAuth_provider_sharing_a_ClaimsIssuer_is_named_in_one_failure()
     {
         using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
@@ -793,6 +815,12 @@ public sealed class ProviderHostIntegrationTests
 
     /// <summary>Options derived from <see cref="OAuthOptions"/>, as every packaged OAuth provider's are.</summary>
     private sealed class AcmeOAuthOptions : OAuthOptions;
+
+    /// <summary>Options as a provider package ships them, with its <c>ClaimsIssuer</c> preset.</summary>
+    private sealed class PresetAcmeOAuthOptions : OAuthOptions
+    {
+        public PresetAcmeOAuthOptions() => ClaimsIssuer = "Acme";
+    }
 
     /// <summary>A handler outside the remote hierarchy that handles requests — supported, with nothing to pin.</summary>
     private sealed class PlainRequestHandler(
