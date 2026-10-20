@@ -144,13 +144,19 @@ it as a High finding on every PR that touches the area. Neither reviewer ever ca
 findings, or your own opinion of where the weak spot is — independence is what makes a finding
 raised twice high-confidence, and a primed reviewer raises nothing independently.
 
-Reviewers run **in the background, in parallel** — that is what "launched in one message" buys, and
-it is safe: a background subagent loses the native `LSP` tool, but each reviewer carries its own MCP
-C# language server (`csharp-lsp-<agent>`) and the `code-navigation` skill sends it there. A reviewer
-result that says it navigated with grep because no language server was available means
-`csharp-lsp-mcp` is not on `PATH` — fix that (`.claude/machine-setup.md` §2a) rather than accepting
-the review. Alongside them, run CodeScene `analyze_change_set` yourself (agents reach only the MCP
-servers their own frontmatter names), and **again before every push** — a fix round introduces its own
+Reviewers run **in the foreground, in parallel**: every Claude reviewer and every lens stand-in is
+launched in one message with `run_in_background: false`, so they run at once and every result comes
+back inside the same turn. Never background a reviewer. A background result reaches the session only
+through a completion notification, and finished reviews have sat unread while the maintainer waited —
+an agent that ended its turn announcing a report it never wrote, a notification that arrived after
+the maintainer's task panel already showed the agent done. In the foreground an empty or cut-off
+result is seen the moment it returns: resume that agent with `SendMessage` at once. A Copilot lens
+is a Bash script, not an agent; run it through the Bash tool in the same message. Each reviewer
+carries its own MCP C# language server (`csharp-lsp-<agent>`), which the `code-navigation` skill
+sends it to. A reviewer result that says it navigated with grep because no language server was
+available means `csharp-lsp-mcp` is not on `PATH` — fix that (`.claude/machine-setup.md` §2a) rather
+than accepting the review. In the same message, run CodeScene `analyze_change_set` yourself (agents
+reach only the MCP servers their own frontmatter names), and **again before every push** — a fix round introduces its own
 smells, and PR CodeScene is a gate, not the first look — **production files only. Findings on `tests/` are ignored entirely, not
 argued with**: test code is specification, duplication is how specifications read, and clearly named
 repetitive tests beat clever compact ones.
