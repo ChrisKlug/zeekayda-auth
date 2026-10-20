@@ -43,8 +43,8 @@ public sealed class ExternalSubjectTests
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net")], "upstream"));
 
-        var throughAcme = ExternalSubject.ForPromotion("acme", upstream);
-        var throughGlobex = ExternalSubject.ForPromotion("globex", upstream);
+        var throughAcme = ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
+        var throughGlobex = ExternalSubject.ForPromotion("globex", claimsIssuer: null, upstream);
 
         throughGlobex.Value.Should().Be(throughAcme.Value)
             .And.Be(ExternalSubject.Derive("https://acme.example.net", "42"));
@@ -66,7 +66,7 @@ public sealed class ExternalSubjectTests
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "42", ClaimValueTypes.String, "https://acme.example.net")], "acme"));
 
-        var identity = ExternalSubject.Identify("acme", upstream);
+        var identity = ExternalSubject.Identify("acme", claimsIssuer: null, upstream);
 
         identity.Subject.Should().Be("42");
         identity.Issuer.Should().Be("https://acme.example.net");
@@ -82,7 +82,7 @@ public sealed class ExternalSubjectTests
             new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net"),
         ], "acme"));
 
-        var identity = ExternalSubject.Identify("acme", upstream);
+        var identity = ExternalSubject.Identify("acme", claimsIssuer: null, upstream);
 
         identity.Issuer.Should().Be("https://acme.example.net");
     }
@@ -97,7 +97,7 @@ public sealed class ExternalSubjectTests
             new Claim("email", "user@example.net", ClaimValueTypes.String, "https://acme.example.net"),
         ], "acme"));
 
-        var promoted = ExternalSubject.ForPromotion("acme", upstream);
+        var promoted = ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
@@ -108,7 +108,7 @@ public sealed class ExternalSubjectTests
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.NameIdentifier, "42", ClaimValueTypes.String, "https://acme.example.net")], "acme"));
 
-        var promoted = ExternalSubject.ForPromotion("acme", upstream);
+        var promoted = ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
@@ -124,7 +124,7 @@ public sealed class ExternalSubjectTests
             new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "42", ClaimValueTypes.String, "https://acme.example.net")], "acme"),
         ]);
 
-        var promoted = ExternalSubject.ForPromotion("acme", upstream);
+        var promoted = ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promoted.Value.Should().Be(ExternalSubject.Derive("https://acme.example.net", "42"));
     }
@@ -135,7 +135,7 @@ public sealed class ExternalSubjectTests
         var upstream = new ClaimsPrincipal(
             new ClaimsIdentity([new Claim("sub", "42", ClaimValueTypes.String, "https://acme.example.net")]));
 
-        var promote = () => ExternalSubject.ForPromotion("acme", upstream);
+        var promote = () => ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promote.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*authenticated identity*");
     }
@@ -146,7 +146,7 @@ public sealed class ExternalSubjectTests
         var upstream = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim("email", "user@example.net", ClaimValueTypes.String, "https://acme.example.net")], "acme"));
 
-        var promote = () => ExternalSubject.ForPromotion("acme", upstream);
+        var promote = () => ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promote.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*no subject*");
     }
@@ -156,8 +156,36 @@ public sealed class ExternalSubjectTests
     {
         var upstream = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "42")], "acme"));
 
-        var promote = () => ExternalSubject.ForPromotion("acme", upstream);
+        var promote = () => ExternalSubject.ForPromotion("acme", claimsIssuer: null, upstream);
 
         promote.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*issuer*");
+    }
+
+    [Theory]
+    [InlineData("acme", null)]
+    [InlineData("Acme", null)]
+    [InlineData("acme", " ")]
+    [InlineData("acme", "https://acme.example.net")]
+    public void Identify_refuses_a_subject_issued_under_the_registration_name_unless_ClaimsIssuer_is_that_name(string issuer, string? claimsIssuer)
+    {
+        // The fallback, or a handler ignoring the ClaimsIssuer it was given: a rename would re-identify every user.
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "42", ClaimValueTypes.String, issuer)], "acme"));
+
+        var identify = () => ExternalSubject.Identify("acme", claimsIssuer, upstream);
+
+        identify.Should().Throw<ZeeKayDaInteractionException>().WithMessage("*ClaimsIssuer*");
+    }
+
+    [Fact]
+    public void Identify_accepts_a_subject_issued_under_the_registration_name_when_ClaimsIssuer_sets_it()
+    {
+        // A ClaimsIssuer set to the same string, as some provider packages preset it, survives a rename.
+        var upstream = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "42", ClaimValueTypes.String, "acme")], "acme"));
+
+        var identity = ExternalSubject.Identify("acme", claimsIssuer: "acme", upstream);
+
+        identity.Issuer.Should().Be("acme");
     }
 }

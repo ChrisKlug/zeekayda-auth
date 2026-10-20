@@ -292,7 +292,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         resume.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]
@@ -370,7 +370,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
 
-        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be("acme");
+        pending.GetProperty("identityIssuer").GetString().Should().Be(seen!.Issuer).And.Be(AcmeIssuer);
         pending.GetProperty("identitySubject").GetString().Should().Be(seen.Subject).And.Be(UpstreamSubject);
     }
 
@@ -386,7 +386,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var pending = (await ReadJsonAsync(client, resume.Headers.Location!.OriginalString))!.Value;
 
         pending.GetProperty("identities").EnumerateArray().Select(element => element.GetString())
-            .Should().Equal("acme", "acme-directory");
+            .Should().Equal(AcmeIssuer, "acme-directory");
         pending.GetProperty("dept").GetString().Should().Be("sales", "the secondary identity keeps its claims, not only its type");
         pending.GetProperty("reservedClaims").GetInt32().Should().Be(0);
     }
@@ -407,7 +407,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
 
         signIn.ShouldHaveReachedConsent();
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
-        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject), "the upstream subject never enters the session");
+        session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject), "the upstream subject never enters the session");
         session.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
             .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount], "the provider's name claim stays out");
         session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
@@ -937,7 +937,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         (await ReadJsonAsync(client, secondResume.Headers.Location!.OriginalString)).Should().NotBeNull("the first tab's sign-in consumed only its own principal");
         var second = await client.PostAsync(WithInteractionId(CollectMorePath, secondTab), Form(), Cancellation);
         second.ShouldHaveReachedConsent();
-        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive("acme", UpstreamSubject));
+        (await ReadJsonAsync(client, "/test/session"))!.Value.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject));
     }
 
     [Fact]

@@ -15,21 +15,29 @@ public static class ExternalSubject
     internal static readonly string[] SubjectClaimTypes = ["sub", ClaimTypes.NameIdentifier];
 
     /// <summary>The session subject for an external principal: the derived one, never the upstream value.</summary>
+    /// <param name="providerId">The provider's registration name.</param>
+    /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
+    /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, or its subject claim names no issuer.
+    /// The principal carries no subject claim, its subject claim names no issuer, or its issuer is the
+    /// registration name and not exactly <paramref name="claimsIssuer"/>.
     /// </exception>
-    internal static SessionSubject ForPromotion(string providerId, ClaimsPrincipal principal)
+    internal static SessionSubject ForPromotion(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
-        var identity = Identify(providerId, principal);
+        var identity = Identify(providerId, claimsIssuer, principal);
 
         return SessionSubject.From(Derive(identity.Issuer, identity.Subject));
     }
 
     /// <summary>The upstream identity of a principal the framework will promote or park.</summary>
+    /// <param name="providerId">The provider's registration name.</param>
+    /// <param name="claimsIssuer">The <c>ClaimsIssuer</c> the provider's options set, if any.</param>
+    /// <param name="principal">The principal the provider authenticated.</param>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The principal carries no subject claim, or its subject claim names no issuer.
+    /// The principal carries no subject claim, its subject claim names no issuer, or its issuer is the
+    /// registration name and not exactly <paramref name="claimsIssuer"/>.
     /// </exception>
-    internal static ExternalIdentity Identify(string providerId, ClaimsPrincipal principal)
+    internal static ExternalIdentity Identify(string providerId, string? claimsIssuer, ClaimsPrincipal principal)
     {
         ArgumentException.ThrowIfNullOrEmpty(providerId);
         ArgumentNullException.ThrowIfNull(principal);
@@ -47,6 +55,17 @@ public static class ExternalSubject
                 $"The subject claim provider '{providerId}' returned names no issuer. Upstream subjects " +
                 "are unique only within their issuer, so the session subject is derived from the issuer and " +
                 "the subject together. Create the claim with its issuer set.");
+        }
+
+        if (string.Equals(subject.Issuer, providerId, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(subject.Issuer, claimsIssuer, StringComparison.Ordinal))
+        {
+            throw new ZeeKayDaInteractionException(
+                $"The subject claim provider '{providerId}' returned has the provider's registration name " +
+                "as its issuer, the value a handler falls back to without a ClaimsIssuer. The session subject " +
+                "is derived from the issuer, so renaming the registration would give every user a new subject. " +
+                "Set ClaimsIssuer on the provider's options to a value naming the upstream identity provider, " +
+                "and never reuse it for a different provider.");
         }
 
         return new ExternalIdentity(subject.Issuer, subject.Value);
@@ -74,10 +93,12 @@ public static class ExternalSubject
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The issuer namespaces the upstream subject, so the provider's registration name plays no
-    /// part: two registrations of one issuer share their users' identities, and renaming a
-    /// registration changes no subject. Use it to compute the subject an external user will get, to
-    /// link a local account to them before they first sign in.
+    /// The issuer namespaces the upstream subject: two registrations of one issuer share their users'
+    /// identities, and renaming a registration changes no subject. An OpenID Connect handler stamps the
+    /// ID token's issuer; an OAuth handler stamps its <c>ClaimsIssuer</c>, which the framework requires,
+    /// since the fallback is the registration name. Never give two different providers one issuer: their
+    /// users' subjects would collide. Use it to compute the subject an external user will get, to link a
+    /// local account to them before they first sign in.
     /// </para>
     /// <para>
     /// Both parts are compared exactly, case included. The result is

@@ -109,8 +109,9 @@ public sealed class ProviderSignInInteraction
         if (pending is null || _providers.Find(pending.Provider) is not { } registration)
             return null;
 
+        var claimsIssuer = HandlerOptions.ClaimsIssuerOf(context.RequestServices, registration);
         return new PendingPrincipal(
-            ExternalSubject.Identify(registration.Name, pending.Principal), pending.Principal, registration.Descriptor);
+            ExternalSubject.Identify(registration.Name, claimsIssuer, pending.Principal), pending.Principal, registration.Descriptor);
     }
 
     /// <summary>
@@ -149,9 +150,9 @@ public sealed class ProviderSignInInteraction
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        RequirePromotable(parked);
+        RequirePromotable(context, parked);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
-        var promoted = Promote(taken);
+        var promoted = Promote(context, taken);
 
         var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
@@ -345,25 +346,22 @@ public sealed class ProviderSignInInteraction
         "user did not arrive here through RedirectToAsync. Send the user back to the login page.");
 
     /// <summary>Refuses, without taking it, a parked principal that <see cref="Promote"/> would refuse.</summary>
-    private void RequirePromotable(PendingTicket parked) => Promote(parked);
+    private void RequirePromotable(HttpContext context, PendingTicket parked) => Promote(context, parked);
 
     /// <summary>The principal to promote for a parked ticket, from a provider still registered.</summary>
-    private SessionSubject Promote(PendingTicket ticket)
+    private SessionSubject Promote(HttpContext context, PendingTicket ticket)
     {
-        RequireRegistered(ticket);
-        return ExternalSubject.ForPromotion(ticket.Provider, ticket.Principal);
+        var registration = RequireRegistered(ticket);
+        var claimsIssuer = HandlerOptions.ClaimsIssuerOf(context.RequestServices, registration);
+        return ExternalSubject.ForPromotion(registration.Name, claimsIssuer, ticket.Principal);
     }
 
-    /// <summary>Refuses a parked principal whose provider the host no longer registers.</summary>
-    private void RequireRegistered(PendingTicket ticket)
-    {
-        if (_providers.Find(ticket.Provider) is null)
-        {
-            throw new ZeeKayDaInteractionException(
-                "The provider that authenticated the parked principal is no longer registered, so the " +
-                "sign-in cannot be finished. Send the user back to the login page.");
-        }
-    }
+    /// <summary>The registration of a parked principal's provider, refused when the host no longer registers it.</summary>
+    private ProviderRegistration RequireRegistered(PendingTicket ticket) =>
+        _providers.Find(ticket.Provider)
+        ?? throw new ZeeKayDaInteractionException(
+            "The provider that authenticated the parked principal is no longer registered, so the " +
+            "sign-in cannot be finished. Send the user back to the login page.");
 
     private void RequireReplaceable(PendingTicket ticket, SessionSubject replacement)
     {

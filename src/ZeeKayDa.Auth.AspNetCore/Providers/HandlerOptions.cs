@@ -5,8 +5,8 @@ using Microsoft.Extensions.Options;
 namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
-/// Reads a handler's options at startup, through a virtual call rather than a reflective invoke, so
-/// a validation failure surfaces as itself.
+/// Reads a handler's options, through a virtual call rather than a reflective invoke, so a
+/// validation failure surfaces as itself.
 /// </summary>
 internal static class HandlerOptions
 {
@@ -22,6 +22,19 @@ internal static class HandlerOptions
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The <c>ClaimsIssuer</c> a provider's options set: <see langword="null"/> when none is set, or the
+    /// handler is not an <see cref="AuthenticationHandler{TOptions}"/> whose options can be read.
+    /// </summary>
+    public static string? ClaimsIssuerOf(IServiceProvider services, ProviderRegistration registration)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+
+        return TypeOf(registration.HandlerType) is { } optionsType
+            ? ((AuthenticationSchemeOptions)Resolve(services, optionsType, registration.Name)).ClaimsIssuer
+            : null;
     }
 
     /// <summary>Resolves the options named <paramref name="name"/> of a type known only at runtime.</summary>

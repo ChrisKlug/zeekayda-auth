@@ -28,6 +28,7 @@ public sealed class ProviderHostIntegrationTests
     {
         options.ClientId = "acme-client";
         options.ClientSecret = "acme-secret";
+        options.ClaimsIssuer = "https://acme.example.net";
         options.AuthorizationEndpoint = "https://acme.example.net/authorize";
         options.TokenEndpoint = "https://acme.example.net/token";
     }
@@ -600,6 +601,38 @@ public sealed class ProviderHostIntegrationTests
         using var client = NewClient(factory);
 
         logs.Entries.Should().NotContain(entry => entry.Message.Contains("provider.no_code_injection_protection", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void An_OAuth_provider_without_a_ClaimsIssuer_fails_startup_naming_it(string? claimsIssuer)
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth => auth.AddOAuth("acme", options =>
+        {
+            ConfigureAcme(options);
+            options.ClaimsIssuer = claimsIssuer;
+        })));
+
+        var start = () => factory.CreateClient();
+
+        start.Should().Throw<Exception>()
+            .Where(ex => ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
+                .AggregatedFailures.Any(failure => failure.Code == "provider.claims_issuer_required" && failure.Message.Contains("'acme'")));
+    }
+
+    [Fact]
+    public void A_provider_on_an_OAuthOptions_subclass_without_a_ClaimsIssuer_fails_startup()
+    {
+        using var factory = NewFactory(configureBuilder: builder =>
+            builder.WithProviders(auth => auth.AddOAuth<AcmeOAuthOptions, OAuthHandler<AcmeOAuthOptions>>("acme", options =>
+            {
+                ConfigureAcme(options);
+                options.ClaimsIssuer = null;
+            })));
+
+        ShouldFailStartupWith(factory, "provider.claims_issuer_required");
     }
 
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────

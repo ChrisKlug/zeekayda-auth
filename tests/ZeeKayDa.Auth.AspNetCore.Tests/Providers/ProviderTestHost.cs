@@ -30,6 +30,7 @@ internal static class ProviderTestHost
     public const string LoginPath = "/account/login";
     public const string CollectMorePath = "/collect-more";
     public const string UpstreamSubject = "upstream-42";
+    public const string AcmeIssuer = "https://acme.example.net";
     public const string HandWrittenIssuer = "https://hand.example.net";
     public const string HandWrittenSubject = "hand-7";
 
@@ -45,6 +46,7 @@ internal static class ProviderTestHost
     {
         options.ClientId = "acme-client";
         options.ClientSecret = "acme-secret";
+        options.ClaimsIssuer = AcmeIssuer;
         options.AuthorizationEndpoint = "https://acme.example.net/authorize";
         options.TokenEndpoint = "https://acme.example.net/token";
         options.BackchannelHttpHandler = backchannel;
@@ -334,6 +336,9 @@ internal static class ProviderTestHost
         /// <summary>Create the subject claim without an issuer.</summary>
         public bool SubjectWithoutIssuer { get; set; }
 
+        /// <summary>Stamp the scheme name as the subject's issuer, as a handler with no <c>ClaimsIssuer</c> does.</summary>
+        public bool SubjectIssuedAsScheme { get; set; }
+
         /// <summary>Return <see langword="false"/> from the callback.</summary>
         public bool DeclineCallback { get; set; }
 
@@ -392,7 +397,9 @@ internal static class ProviderTestHost
             var properties = _state.Unprotect(_context.Request.Query["state"])
                 ?? throw new InvalidOperationException("The state did not unprotect.");
 
-            var issuer = settings.SubjectWithoutIssuer ? ClaimsIdentity.DefaultIssuer : HandWrittenIssuer;
+            var issuer = settings.SubjectWithoutIssuer ? ClaimsIdentity.DefaultIssuer
+                : settings.SubjectIssuedAsScheme ? _scheme.Name
+                : HandWrittenIssuer;
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim("sub", HandWrittenSubject, ClaimValueTypes.String, issuer)], _scheme.Name));
 

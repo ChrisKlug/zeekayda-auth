@@ -18,7 +18,8 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// <summary>
     /// Registers external authentication providers. The callback receives a real
     /// <see cref="AuthenticationBuilder"/>, so every provider package works unchanged —
-    /// <c>auth.AddGoogle(...)</c>, <c>auth.AddOpenIdConnect(...)</c>, or any other.
+    /// <c>auth.AddOpenIdConnect(...)</c>, <c>auth.AddGoogle(...)</c> once its <c>ClaimsIssuer</c> is set,
+    /// or any other.
     /// </summary>
     /// <param name="builder">The ZeeKayDa.Auth builder.</param>
     /// <param name="configure">Registers the providers on the supplied <see cref="AuthenticationBuilder"/>.</param>
@@ -42,6 +43,14 @@ public static class ZeeKayDaAuthBuilderProviderExtensions
     /// handles its callback at <c>/connect/callback/{name}</c> under the issuer path, and it signs in
     /// to <see cref="ZeeKayDaSchemes.External"/>. Otherwise the round trip is abandoned, which the
     /// framework logs. Startup warns about every such provider.
+    /// </para>
+    /// <para>
+    /// A provider on <c>OAuthOptions</c> must set <c>ClaimsIssuer</c>, or startup fails: an external
+    /// user's subject is derived from the issuer of their subject claim, and an OAuth handler falls
+    /// back to the registration name, which a rename would change. Name the upstream identity provider,
+    /// such as by its issuer URL, and never reuse the value for a different provider. A sign-in through
+    /// any handler whose subject claim's issuer is the registration name is refused, unless
+    /// <c>ClaimsIssuer</c> is set to exactly that value.
     /// </para>
     /// <para>
     /// Startup also warns about a provider on <c>OAuthOptions</c> with <c>UsePkce</c> off, which

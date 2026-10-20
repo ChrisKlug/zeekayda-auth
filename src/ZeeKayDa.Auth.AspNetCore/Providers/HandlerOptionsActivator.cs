@@ -7,8 +7,9 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 
 /// <summary>
 /// Resolves every provider's options at startup, so invalid ones — including drift from
-/// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in, and warns
-/// for an OAuth provider whose code has no injection protection on the upstream leg.
+/// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in. An OAuth
+/// provider must name its issuer, and is warned about when its code has no injection protection on
+/// the upstream leg.
 /// </summary>
 /// <remarks>
 /// An activator, since resolving options runs provider and host code. Failures quote only the
@@ -42,15 +43,15 @@ internal sealed class HandlerOptionsActivator(
                 failures.AddRange(failed.Failures);
                 causes.Add(failed.Cause);
             }
-            else if (options is OAuthOptions { UsePkce: false })
+            else if (options is OAuthOptions oauth && VerifyOAuth(context, registration.Name, oauth) is { } failure)
             {
-                WarnNoCodeInjectionProtection(context, registration.Name);
+                failures.Add(failure);
             }
         }
 
         // Thrown rather than added, so the root causes travel as the inner exception.
         if (failures.Count > 0)
-            throw new ZeeKayDaConfigurationException(failures, causes.Count == 1 ? causes[0] : new AggregateException(causes));
+            throw ZeeKayDaConfigurationException.WithRootCauses(failures, causes);
 
         return Task.CompletedTask;
     }
@@ -94,6 +95,24 @@ internal sealed class HandlerOptionsActivator(
                 ex);
         }
     }
+
+    /// <summary>Warns about an OAuth provider without PKCE; the failure for one with no <c>ClaimsIssuer</c>, else <see langword="null"/>.</summary>
+    private static ZeeKayDaConfigurationFailure? VerifyOAuth(StartupVerificationContext context, string name, OAuthOptions oauth)
+    {
+        if (!oauth.UsePkce)
+            WarnNoCodeInjectionProtection(context, name);
+
+        return string.IsNullOrWhiteSpace(oauth.ClaimsIssuer) ? ClaimsIssuerRequired(name) : null;
+    }
+
+    private static ZeeKayDaConfigurationFailure ClaimsIssuerRequired(string name) =>
+        new(
+            "provider.claims_issuer_required",
+            $"The provider '{name}' is an OAuth provider with no ClaimsIssuer. A user's subject is derived " +
+            "from the issuer of their subject claim, which an OAuth handler takes from ClaimsIssuer, else " +
+            "from the registration name, so renaming the registration would give every user a new subject. " +
+            "Set ClaimsIssuer to a value naming the upstream identity provider, such as its issuer URL, and " +
+            "never reuse it for a different provider.");
 
     /// <summary>RFC 9700 §2.1.1 requires code-injection protection on the upstream leg; with no nonce, an OAuth handler has only PKCE.</summary>
     private static void WarnNoCodeInjectionProtection(StartupVerificationContext context, string name) =>

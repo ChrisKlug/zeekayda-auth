@@ -19,7 +19,7 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
     private const string PageLoginId = "page.user@example.com";
     private const string Linked = "mapped-user";
 
-    private static readonly string DerivedSubject = ExternalSubject.Derive("acme", ProviderTestHost.UpstreamSubject);
+    private static readonly string DerivedSubject = ExternalSubject.Derive(ProviderTestHost.AcmeIssuer, ProviderTestHost.UpstreamSubject);
 
     private readonly MultiAccountProviderHostFixture _host;
     private readonly MultiAccountBrowser _browser;
