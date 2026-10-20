@@ -9,7 +9,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Providers;
 /// Resolves every provider's options at startup, so invalid ones — including drift from
 /// <see cref="HandlerOptionsValidator{TOptions}"/>'s pins — fail before the first sign-in. An OAuth
 /// provider must name its issuer, and is warned about when its code has no injection protection on
-/// the upstream leg.
+/// the upstream leg. OAuth providers sharing a <c>ClaimsIssuer</c> must share an upstream.
 /// </summary>
 /// <remarks>
 /// An activator, since resolving options runs provider and host code. Failures quote only the
@@ -30,6 +30,7 @@ internal sealed class HandlerOptionsActivator(
 
         var failures = new List<ZeeKayDaConfigurationFailure>();
         var causes = new List<Exception>();
+        var oauthProviders = new List<OAuthProvider>();
 
         foreach (var registration in registry.Registrations)
         {
@@ -43,11 +44,13 @@ internal sealed class HandlerOptionsActivator(
                 failures.AddRange(failed.Failures);
                 causes.Add(failed.Cause);
             }
-            else if (options is OAuthOptions oauth && VerifyOAuth(context, registration.Name, oauth) is { } failure)
+            else if (options is OAuthOptions oauth)
             {
-                failures.Add(failure);
+                oauthProviders.Add(new OAuthProvider(registration.Name, oauth));
             }
         }
+
+        failures.AddRange(VerifyOAuth(context, oauthProviders));
 
         // Thrown rather than added, so the root causes travel as the inner exception.
         if (failures.Count > 0)
@@ -96,14 +99,29 @@ internal sealed class HandlerOptionsActivator(
         }
     }
 
-    /// <summary>Warns about an OAuth provider without PKCE; the failure for one with no <c>ClaimsIssuer</c>, else <see langword="null"/>.</summary>
-    private static ZeeKayDaConfigurationFailure? VerifyOAuth(StartupVerificationContext context, string name, OAuthOptions oauth)
+    /// <summary>
+    /// Warns about each OAuth provider without PKCE; the failures for each with no <c>ClaimsIssuer</c>,
+    /// and for each <c>ClaimsIssuer</c> shared across token endpoints.
+    /// </summary>
+    private static IEnumerable<ZeeKayDaConfigurationFailure> VerifyOAuth(
+        StartupVerificationContext context,
+        IReadOnlyList<OAuthProvider> providers)
     {
-        if (!oauth.UsePkce)
-            WarnNoCodeInjectionProtection(context, name);
+        foreach (var provider in providers.Where(provider => !provider.Options.UsePkce))
+            WarnNoCodeInjectionProtection(context, provider.Name);
 
-        return string.IsNullOrWhiteSpace(oauth.ClaimsIssuer) ? ClaimsIssuerRequired(name) : null;
+        var unnamed = providers.Where(provider => !provider.NamesIssuer).Select(provider => ClaimsIssuerRequired(provider.Name));
+        var shared = providers
+            .Where(provider => provider.NamesIssuer)
+            .GroupBy(provider => provider.Options.ClaimsIssuer, StringComparer.Ordinal)
+            .Where(SpansTokenEndpoints)
+            .Select(group => ClaimsIssuerShared([.. group.Select(provider => provider.Name)]));
+
+        return [.. unnamed, .. shared];
     }
+
+    private static bool SpansTokenEndpoints(IEnumerable<OAuthProvider> providers) =>
+        providers.Select(provider => provider.Options.TokenEndpoint).Distinct(StringComparer.Ordinal).Skip(1).Any();
 
     private static ZeeKayDaConfigurationFailure ClaimsIssuerRequired(string name) =>
         new(
@@ -113,6 +131,21 @@ internal sealed class HandlerOptionsActivator(
             "from the registration name, so renaming the registration would give every user a new subject. " +
             "Set ClaimsIssuer to a value naming the upstream identity provider, such as its issuer URL, and " +
             "never reuse it for a different provider.");
+
+    private static ZeeKayDaConfigurationFailure ClaimsIssuerShared(IReadOnlyList<string> names) =>
+        new(
+            "provider.claims_issuer_shared",
+            $"The providers {Quote(names)} are OAuth providers that share one ClaimsIssuer but redeem codes at " +
+            "different token endpoints. A user's subject is derived from the issuer of their subject claim and " +
+            "their id at the provider, so the same id at different upstreams would give different people one " +
+            "subject. Give each upstream its own ClaimsIssuer, such as its issuer URL.");
+
+    /// <summary>The names quoted and listed: <c>'a', 'b' and 'c'</c>.</summary>
+    private static string Quote(IReadOnlyList<string> names)
+    {
+        var quoted = names.Select(name => $"'{name}'").ToArray();
+        return $"{string.Join(", ", quoted[..^1])} and {quoted[^1]}";
+    }
 
     /// <summary>RFC 9700 §2.1.1 requires code-injection protection on the upstream leg; with no nonce, an OAuth handler has only PKCE.</summary>
     private static void WarnNoCodeInjectionProtection(StartupVerificationContext context, string name) =>
@@ -144,5 +177,10 @@ internal sealed class HandlerOptionsActivator(
             message += $" {others} further validation failure(s) came from the provider's or the host's own rules; see the inner exception.";
 
         return message;
+    }
+
+    private sealed record OAuthProvider(string Name, OAuthOptions Options)
+    {
+        public bool NamesIssuer => !string.IsNullOrWhiteSpace(Options.ClaimsIssuer);
     }
 }

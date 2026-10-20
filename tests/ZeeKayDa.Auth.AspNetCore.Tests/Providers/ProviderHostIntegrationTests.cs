@@ -635,6 +635,87 @@ public sealed class ProviderHostIntegrationTests
         ShouldFailStartupWith(factory, "provider.claims_issuer_required");
     }
 
+    [Fact]
+    public void OAuth_providers_sharing_a_ClaimsIssuer_at_different_token_endpoints_fail_startup_naming_them()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("acme", ConfigureAcme);
+            auth.AddOAuth("acme-enterprise", options =>
+            {
+                ConfigureAcme(options);
+                options.TokenEndpoint = "https://acme.corp.example/token";
+            });
+        }));
+
+        var start = () => factory.CreateClient();
+
+        start.Should().Throw<Exception>()
+            .Where(ex => ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(ex)!
+                .AggregatedFailures.Any(failure => failure.Code == "provider.claims_issuer_shared"
+                    && failure.Message.Contains("'acme' and 'acme-enterprise'")));
+    }
+
+    [Fact]
+    public void Every_OAuth_provider_sharing_a_ClaimsIssuer_is_named_in_one_failure()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("acme", ConfigureAcme);
+            auth.AddOAuth("acme-wide-scope", ConfigureAcme);
+            auth.AddOAuth("acme-enterprise", options =>
+            {
+                ConfigureAcme(options);
+                options.TokenEndpoint = "https://acme.corp.example/token";
+            });
+        }));
+
+        var start = () => factory.CreateClient();
+
+        var thrown = start.Should().Throw<Exception>().Which;
+        ExceptionChain.FindInChain<ZeeKayDaConfigurationException>(thrown)!.AggregatedFailures
+            .Where(failure => failure.Code == "provider.claims_issuer_shared")
+            .Should().ContainSingle()
+            .Which.Message.Should().Contain("'acme', 'acme-wide-scope' and 'acme-enterprise'");
+    }
+
+    [Fact]
+    public void OAuth_providers_sharing_a_ClaimsIssuer_and_a_token_endpoint_start()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("acme", ConfigureAcme);
+            auth.AddOAuth("acme-wide-scope", options =>
+            {
+                ConfigureAcme(options);
+                options.ClientId = "acme-wide-scope-client";
+            });
+        }));
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+    }
+
+    [Fact]
+    public void OAuth_providers_whose_ClaimsIssuers_differ_only_in_case_do_not_share_one()
+    {
+        using var factory = NewFactory(configureBuilder: builder => builder.WithProviders(auth =>
+        {
+            auth.AddOAuth("acme", ConfigureAcme);
+            auth.AddOAuth("acme-enterprise", options =>
+            {
+                ConfigureAcme(options);
+                options.ClaimsIssuer = "https://ACME.example.net";
+                options.TokenEndpoint = "https://acme.corp.example/token";
+            });
+        }));
+
+        var start = () => factory.CreateClient();
+
+        start.Should().NotThrow();
+    }
+
     // ── Dispatch at the authorization endpoint ────────────────────────────────────────────────
 
     [Fact]
