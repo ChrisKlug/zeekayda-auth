@@ -83,6 +83,8 @@ registration, so entries carry `MyPackage.MyVerifier`, not the runner. Template 
 sink unformatted, so structured backends index them and by-key redaction acts on them as at any other
 call site. The runner's prefix placeholder is `{ErrorCode}`, never `{Code}`: `code` is a redaction key
 elsewhere, and `{Code}` would silently redact every startup warning's discriminator in production.
+One check runs after the runner and logs through its `LogWarning`: the endpoint rate-limiting
+warning, in an `IStartupFilter`, as a `Startup`-style host maps endpoints only in `Configure`.
 
 **The level is data spanning the whole `LogLevel` range, chosen at the call site.** A
 development-only resource records `Information` in `Development` and `Critical` for a deliberate
@@ -126,9 +128,8 @@ deduplicates by implementation type and would silently drop the second, so the p
 per registration call, each capturing its own store name and opt-out) are added directly. The log
 category is the shared type; the instance `Name` tells them apart. Gating is in `token-stores.md`.
 
-**No check's warning is suppressed because another check failed.** A phase collects every failure and
-warning first, logs the warnings, then throws, so a phase's warnings appear *ahead of* the failure
-that aborts startup. Accepted: the host refuses to start either way.
+**No check's warning is suppressed because another check failed.** A phase logs every warning before
+throwing its failures, so the warnings appear *ahead of* the failure that aborts startup.
 
 **Identical failures are reported once.** Two checks can surface the same broken dependency — the
 client-repository and key-ring activators both report a failed key source — and that is one problem
@@ -137,12 +138,11 @@ for the operator. Failures sharing a `(Code, Message)` collapse; their root caus
 ## Tried, didn't work
 
 - **One hand-rolled `IHostedService` per check, with the sanitizing-logger check registered first.**
-  The shipped model for roughly twelve checks. Its ordering guarantee was a comment next to an
-  `AddHostedService` call, breakable by a host setting `HostOptions.ServicesStartConcurrently = true`
-  or by a contributor reordering registrations, and its scope-resolution discipline lived in
-  `<remarks>` on two classes so every new check had to rediscover it. Honest cost of the reversal:
-  one runner is now a shared failure mode for every check, where a bug in one hosted service used to
-  affect one check.
+  Its ordering guarantee was a comment next to an `AddHostedService` call, breakable by a host
+  setting `HostOptions.ServicesStartConcurrently = true` or by a contributor reordering
+  registrations, and its scope-resolution discipline lived in `<remarks>` on two classes so every
+  new check had to rediscover it. Honest cost of the reversal: one runner is now a shared failure
+  mode for every check, where a bug in one hosted service used to affect one check.
 - **A gate phase proving a public `ISanitizingLogger<T>` interface had not been replaced.** It scanned
   registrations and forced buffered warnings and late check resolution. A logger nothing outside the
   framework can construct removed the failure mode, and the phase with it.

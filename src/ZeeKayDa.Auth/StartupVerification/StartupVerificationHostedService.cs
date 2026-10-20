@@ -143,15 +143,7 @@ internal sealed class StartupVerificationHostedService(
     {
         try
         {
-            var logger = (ILogger)services.GetRequiredService(
-                typeof(SanitizingLogger<>).MakeGenericType(check.Instance.GetType()));
-
-#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template; all values stay structured args (#444)
-            logger.Log(
-                warning.Level,
-                "[{Verifier}] {ErrorCode}: " + warning.MessageTemplate,
-                [check.Name, warning.Code, .. warning.Args]);
-#pragma warning restore ZEEKAYDA0002
+            LogWarning(services, check.Instance, check.Name, warning);
             return null;
         }
         catch (Exception ex)
@@ -163,6 +155,24 @@ internal sealed class StartupVerificationHostedService(
                     "See the inner exception for the root cause."),
                 ex);
         }
+    }
+
+    /// <summary>
+    /// Logs one warning under <paramref name="check"/>'s own category. Also called by the one check
+    /// that must run after the runner, once the host's pipeline is built.
+    /// </summary>
+    internal static void LogWarning(
+        IServiceProvider services, object check, string checkName, StartupVerificationWarning warning)
+    {
+        var logger = (ILogger)services.GetRequiredService(
+            typeof(SanitizingLogger<>).MakeGenericType(check.GetType()));
+
+#pragma warning disable ZEEKAYDA0002 // log-hygiene-ok: composes a constant prefix with another unformatted template; all values stay structured args (#444)
+        logger.Log(
+            warning.Level,
+            "[{Verifier}] {ErrorCode}: " + warning.MessageTemplate,
+            [checkName, warning.Code, .. warning.Args]);
+#pragma warning restore ZEEKAYDA0002
     }
 
     /// <summary>A resolved verifier or activator, adapted to the one shape the runner drives.</summary>

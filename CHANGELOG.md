@@ -21,9 +21,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   endpoints alone, so `app.MapZeeKayDaAuth().RequireRateLimiting("policy")` limits them and not the
   host's routes. The framework ships no policy of its own: a sensible limit depends on the
   deployment. Outside Development, startup logs `endpoints.not_rate_limited` when an endpoint is
-  reached by neither a policy nor a global limiter. The check cannot see a missing
-  `UseRateLimiter()` or a limiter in front of the application; a host limiting upstream filters the
-  `ZeeKayDa.Auth.AspNetCore.Endpoints.EndpointRateLimitingActivator` log category.
+  reached by neither a policy nor a global limiter, in minimal and `Startup`-style hosts alike. The
+  check cannot see a missing `UseRateLimiter()`, a global limiter passed to
+  `UseRateLimiter(RateLimiterOptions)`, or a limiter in front of the application; a host limiting
+  upstream filters the `ZeeKayDa.Auth.AspNetCore.Endpoints.EndpointRateLimitingStartupFilter` log
+  category.
 - **Two OAuth providers sharing a `ClaimsIssuer` must share an upstream** (#1045). The issuer
   namespaces a user's subject, so two `OAuthOptions` providers with one `ClaimsIssuer` but different
   upstreams gave user `42` at each the same subject. Providers sharing a `ClaimsIssuer` (compared

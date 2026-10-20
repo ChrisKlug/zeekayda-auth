@@ -59,9 +59,6 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         // The filters below apply to the framework's endpoints, never the host's routes.
         var group = endpoints.MapGroup("");
 
-        // MapGroup added the group's data source last.
-        endpoints.ServiceProvider.GetRequiredService<MappedFrameworkEndpoints>().Add(endpoints.DataSources.Last());
-
         // A URL path is case-sensitive (RFC 3986 §6.2.2.1); routing literals are not.
         group.WithMetadata(ExactPathMetadata.Instance);
 
