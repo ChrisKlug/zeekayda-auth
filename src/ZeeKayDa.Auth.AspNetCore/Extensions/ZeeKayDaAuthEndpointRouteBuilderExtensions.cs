@@ -34,9 +34,10 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     /// registration to ensure all required services are available.
     /// </para>
     /// <para>
-    /// The framework applies no rate limiting of its own; the host's limiter is the control. Outside
-    /// Development, startup warns when an endpoint is reached by neither a policy attached here nor a
-    /// global limiter.
+    /// The framework applies no rate limiting of its own; the host's limiter is the control, and
+    /// <c>UseRateLimiter()</c> must follow an explicit <c>UseRouting()</c> or no endpoint is limited.
+    /// Outside Development, startup warns when an endpoint is reached by neither a policy attached
+    /// here nor a global limiter.
     /// </para>
     /// </remarks>
     public static IEndpointConventionBuilder MapZeeKayDaAuth(this IEndpointRouteBuilder endpoints)

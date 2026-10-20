@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **A host attaches its rate limiter to the framework's endpoints, and is warned when none reaches
   them** (#963). `MapZeeKayDaAuth()` now returns an `IEndpointConventionBuilder` for the framework's
   endpoints alone, so `app.MapZeeKayDaAuth().RequireRateLimiting("policy")` limits them and not the
-  host's routes. The framework ships no policy of its own: a sensible limit depends on the
+  host's routes; `UseRateLimiter()` must follow an explicit `UseRouting()`. The framework ships no policy of its own: a sensible limit depends on the
   deployment. Outside Development, startup logs `endpoints.not_rate_limited` when an endpoint is
   reached by neither a policy nor a global limiter, in minimal and `Startup`-style hosts alike. The
   check cannot see a missing `UseRateLimiter()`, a global limiter passed to

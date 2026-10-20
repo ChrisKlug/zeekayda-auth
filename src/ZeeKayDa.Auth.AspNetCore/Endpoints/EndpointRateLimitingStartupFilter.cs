@@ -32,8 +32,9 @@ internal sealed class EndpointRateLimitingStartupFilter(
         "and no global limiter covers it. Every authorization request costs the interaction store an " +
         "entry and every provider callback an outbound token request, so their volume is bounded only " +
         "by what the host applies. Attach the host's limiter with " +
-        "app.MapZeeKayDaAuth().RequireRateLimiting(\"policy\") and call app.UseRateLimiter(). A host " +
-        "that limits requests before they reach the application can filter this check's log category.";
+        "app.MapZeeKayDaAuth().RequireRateLimiting(\"policy\") and call app.UseRateLimiter(), after " +
+        "app.UseRouting() when the host calls that explicitly. A host that limits requests before " +
+        "they reach the application can filter this check's log category.";
 
     internal const string Name = "EndpointRateLimiting";
 

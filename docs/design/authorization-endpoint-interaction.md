@@ -16,8 +16,9 @@ and are *not* repeated here.
 ## Hosting: routed endpoints, and ZeeKayDa is not an authentication scheme
 
 Every ZeeKayDa endpoint — `/connect/authorize` included — is a routed `IZeeKayDaEndpoint` mapped by
-`MapZeeKayDaAuth()`, inheriting the route group's HTTPS/421 guard, security headers, issuer-host
-constraint and `RequireRateLimiting()` support. GET and POST via `MapMethods`. When interaction is
+`MapZeeKayDaAuth()`, inheriting the route group's HTTPS/421 guard, security headers and issuer-host
+constraint. Rate limiting is the host's, attached to the builder `MapZeeKayDaAuth()` returns. GET and
+POST via `MapMethods`. When interaction is
 needed the endpoint redirects to the host's login page, or hands the request to the provider's
 own handler and lets it challenge.
 
