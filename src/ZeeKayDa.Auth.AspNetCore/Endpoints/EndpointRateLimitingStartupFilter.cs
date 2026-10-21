@@ -60,9 +60,8 @@ internal sealed class EndpointRateLimitingStartupFilter(
             context.AddWarning(NotRateLimitedCode, NotRateLimitedMessage);
     }
 
-    /// <summary>Every endpoint <c>MapZeeKayDaAuth()</c> maps carries the exact-path marker, and no other does.</summary>
     private static bool IsFrameworkEndpoint(Endpoint endpoint) =>
-        endpoint.Metadata.GetMetadata<ExactPathMetadata>() is not null;
+        endpoint.Metadata.GetMetadata<FrameworkEndpointMetadata>() is not null;
 
     /// <summary>The rate-limiting middleware's own rule: an opt-out wins, else a policy or the global limiter applies.</summary>
     private bool IsRateLimited(Endpoint endpoint) =>

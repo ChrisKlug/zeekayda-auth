@@ -5,27 +5,15 @@ using Microsoft.AspNetCore.Routing.Matching;
 namespace ZeeKayDa.Auth.AspNetCore.Endpoints;
 
 /// <summary>
-/// Marks a framework endpoint whose request path must equal its route template exactly.
-/// </summary>
-internal sealed class ExactPathMetadata
-{
-    public static readonly ExactPathMetadata Instance = new();
-
-    private ExactPathMetadata()
-    {
-    }
-}
-
-/// <summary>
-/// Takes an endpoint carrying <see cref="ExactPathMetadata"/> out of route matching unless the
-/// request path equals its route template ordinally.
+/// Takes a framework endpoint out of route matching unless the request path equals its route
+/// template ordinally.
 /// </summary>
 /// <remarks>
 /// Routing matches literal segments case-insensitively and tolerates a trailing <c>/</c>, but a URL
 /// path is case-sensitive (RFC 3986 §6.2.2.1): <c>/TENANT1/connect/token</c> is not this issuer's
 /// endpoint. Deciding it while the route is still being chosen — ahead of the HTTP-method policy —
 /// makes a wrong path "no route", so it is a 404 whatever the method, and never reaches the
-/// framework's HTTPS or header filters. Endpoints without the marker are untouched.
+/// framework's HTTPS or header filters. The host's own endpoints are untouched.
 /// </remarks>
 internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
 {
@@ -33,15 +21,15 @@ internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
     public override int Order => -2000;
 
     public bool AppliesToEndpoints(IReadOnlyList<Endpoint> endpoints)
-        => endpoints.Any(IsExactPathEndpoint);
+        => endpoints.Any(IsFrameworkEndpoint);
 
     public IReadOnlyList<PolicyNodeEdge> GetEdges(IReadOnlyList<Endpoint> endpoints)
     {
         // An unmarked endpoint matches on every edge; a marked one only on its own exact path.
-        var unmarked = endpoints.Where(endpoint => !IsExactPathEndpoint(endpoint)).ToList();
+        var unmarked = endpoints.Where(endpoint => !IsFrameworkEndpoint(endpoint)).ToList();
 
         var edges = endpoints
-            .Where(IsExactPathEndpoint)
+            .Where(IsFrameworkEndpoint)
             .GroupBy(endpoint => ExactPathOf((RouteEndpoint)endpoint), StringComparer.Ordinal)
             .Select(group => new PolicyNodeEdge(new ExactPath(group.Key), [.. group, .. unmarked]))
             .ToList();
@@ -86,8 +74,8 @@ internal sealed class ExactPathMatcherPolicy : MatcherPolicy, INodeBuilderPolicy
         return rawText;
     }
 
-    private static bool IsExactPathEndpoint(Endpoint endpoint)
-        => endpoint is RouteEndpoint && endpoint.Metadata.GetMetadata<ExactPathMetadata>() is not null;
+    private static bool IsFrameworkEndpoint(Endpoint endpoint)
+        => endpoint is RouteEndpoint && endpoint.Metadata.GetMetadata<FrameworkEndpointMetadata>() is not null;
 
     private sealed record ExactPath(string? Value)
     {

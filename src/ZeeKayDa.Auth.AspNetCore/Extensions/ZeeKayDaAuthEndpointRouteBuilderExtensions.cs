@@ -60,8 +60,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         // The filters below apply to the framework's endpoints, never the host's routes.
         var group = endpoints.MapGroup("");
 
-        // A URL path is case-sensitive (RFC 3986 §6.2.2.1); routing literals are not.
-        group.WithMetadata(ExactPathMetadata.Instance);
+        group.WithMetadata(FrameworkEndpointMetadata.Instance);
 
         group.AddEndpointFilter(async (context, next) =>
         {

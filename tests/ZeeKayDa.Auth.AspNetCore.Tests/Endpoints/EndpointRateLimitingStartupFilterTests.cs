@@ -215,7 +215,7 @@ public sealed class EndpointRateLimitingStartupFilterTests
     }
 
     private static Endpoint FrameworkEndpointWith(params object[] metadata) =>
-        new(requestDelegate: null, new EndpointMetadataCollection([ExactPathMetadata.Instance, .. metadata]), "framework endpoint");
+        new(requestDelegate: null, new EndpointMetadataCollection([FrameworkEndpointMetadata.Instance, .. metadata]), "framework endpoint");
 
     private static StartupVerificationContext Verify(bool globalLimiter, params Endpoint[] endpoints)
     {
