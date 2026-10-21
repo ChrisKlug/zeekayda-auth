@@ -238,8 +238,9 @@ app.UseRateLimiter(); // after UseRouting(), when you call it explicitly
 app.MapZeeKayDaAuth().RequireRateLimiting("auth");
 ```
 
-Outside Development, startup logs the warning `endpoints.not_rate_limited` when a framework endpoint is
-reached by no limiter.
+Outside Development, startup logs the warning `endpoints.not_rate_limited` when a framework endpoint has
+no policy attached and no global limiter is configured. It cannot see whether `UseRateLimiter()` runs,
+so a policy attached without it silences the warning while nothing is limited.
 
 ## Next steps
 

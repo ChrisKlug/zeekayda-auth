@@ -83,8 +83,8 @@ registration, so entries carry `MyPackage.MyVerifier`, not the runner. Template 
 sink unformatted, so structured backends index them and by-key redaction acts on them as at any other
 call site. The runner's prefix placeholder is `{ErrorCode}`, never `{Code}`: `code` is a redaction key
 elsewhere, and `{Code}` would silently redact every startup warning's discriminator in production.
-One check runs after the runner and logs through its `LogWarning`: the endpoint rate-limiting
-warning, in an `IStartupFilter`, as a `Startup`-style host maps endpoints only in `Configure`.
+One check runs outside the runner, once the pipeline is built, and logs through its `LogWarning`: the
+endpoint rate-limiting warning, an `IStartupFilter`, as a `Startup`-style host maps only in `Configure`.
 
 **The level is data spanning the whole `LogLevel` range, chosen at the call site.** A
 development-only resource records `Information` in `Development` and `Critical` for a deliberate
