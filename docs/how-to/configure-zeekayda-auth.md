@@ -229,6 +229,18 @@ https://app.example.com/callback?error=access_denied
 > This residual is accepted deliberately. Operators must apply rate limiting to the token endpoint.
 > Timing uniformity alone is not sufficient to defeat a sustained enumeration attempt.
 
+Attach your limiter to the framework's endpoints through the builder `MapZeeKayDaAuth()` returns. The
+`"auth"` policy is yours, registered with `AddRateLimiter`; partition it by client address (behind a
+proxy, after `UseForwardedHeaders()`) so one client cannot use up the limit for everyone.
+
+```csharp
+app.UseRateLimiter(); // after UseRouting(), when you call it explicitly
+app.MapZeeKayDaAuth().RequireRateLimiting("auth");
+```
+
+Outside Development, startup logs the warning `endpoints.not_rate_limited` when a framework endpoint is
+reached by no limiter.
+
 ## Next steps
 
 - [Configure discovery](configure-discovery.md) — customise the OpenID Connect discovery document,
