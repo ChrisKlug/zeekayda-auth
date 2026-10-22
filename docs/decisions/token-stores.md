@@ -84,8 +84,8 @@ In-memory registrations log at `Information` in `Development`; outside it they f
 the call passed `allowOutsideDevelopment: true`, which downgrades the failure to a `Critical`
 warning on every startup. The flag is a call parameter, never a bindable option: it qualifies a call.
 `AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
-call, because a shared cache is a complete production answer for it (below), and a per-process
-`MemoryDistributedCache` behind it follows the in-memory rule.
+call, because a shared cache is a complete production answer for it (below); a per-process
+`MemoryDistributedCache` behind it follows the in-memory rule through `allowMemoryCacheOutsideDevelopment`.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
 `AuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
@@ -112,9 +112,9 @@ native atomic primitive, registered through the typed path. The interaction stor
 it needs no atomic operation — the one race is decided by the code store — and eviction only fails a
 flow closed, so a shared cache is a complete answer for it and no Redis-specific store is wanted.
 
-**Pruning is the backend's, never the host's work.** The framework never honours an expired row, so
-correctness never waits on cleanup: native per-item expiry (Cosmos TTL, Redis) where a backend has
-it, else a pruning hosted service the first-party package registers in its one `Add…Stores()` call.
+**Pruning is the backend's, never the host's work.** The framework refuses a row past its expiry plus
+`ClockSkewTolerance`, and no cleanup may remove one sooner: native per-item expiry (Cosmos TTL), else
+a pruning hosted service a first-party store package registers with its stores, on by default.
 
 **The conformance kit is the last resort, not the sanctioned path.** `ZeeKayDa.Auth.TestKit` ships
 derive-and-run fixtures for both backing contracts, in its own package so a third party needs no

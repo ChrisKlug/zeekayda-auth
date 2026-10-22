@@ -54,8 +54,8 @@ that took part, and the upstream link when the sign-in came through an external 
   client recorded on the first day never drops off before the session ends. Pruning is the
   backend's native expiry, or the first-party package's own pruning service (`token-stores.md`).
 
-It is a new backing contract with its own TestKit fixture, registered by each package's one
-`Add…Stores()` call beside the others. None of the existing contracts fits: the code and
+It is a new backing contract with its own TestKit fixture, registered by the same call that
+registers a store package's other stores, as `AddInMemoryStores` covers all three today. None of the existing contracts fits: the code and
 interaction stores are key-value with no query by subject or upstream session, and the refresh-token
 store's rows are grants.
 
@@ -92,7 +92,9 @@ redemption and a sign-out interleave, one of them sees the other.
 ## Rejected
 
 - **A client list kept in the cookie.** It cannot be read by a logout that arrives without the
-  browser, and alongside a server record it is a second copy that can disagree.
+  browser, and alongside a server record it is a second copy that can disagree. The cookie's
+  existing `zkd:client` entries are not one: they name the account that answers each client, capped
+  and least recent first out, so they forget clients a logout must still reach.
 - **A record of ended sessions instead of live ones.** A lost or evicted row would silently sign a
   cut-off user back in.
 - **Treating a store fault as alive.** "Store unavailable" is something an attacker can cause —
