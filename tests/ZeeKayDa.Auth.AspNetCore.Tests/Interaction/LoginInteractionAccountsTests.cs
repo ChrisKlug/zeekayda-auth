@@ -213,6 +213,20 @@ public sealed class LoginInteractionAccountsTests : IClassFixture<MultiAccountHo
     }
 
     [Fact]
+    public async Task Given_max_age_zero_a_sign_in_authenticated_before_the_request_is_refused()
+    {
+        var authenticatedAt = _host.Time.GetUtcNow();
+        _host.Time.Advance(TimeSpan.FromSeconds(1));
+        var login = await _browser.AuthorizeAsync(maxAge: "0");
+        ShouldHaveGoneTo(login, LoginPath);
+
+        var signIn = async () => await _browser.PostLoginAsync(Location(login), Alice, authenticatedAt: authenticatedAt);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        (await _browser.ReadSessionAsync()).Accounts.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Given_prompt_login_a_sign_in_authenticated_before_the_request_is_refused()
     {
         var authenticatedAt = _host.Time.GetUtcNow();
