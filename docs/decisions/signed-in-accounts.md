@@ -17,7 +17,7 @@ the case it exists for. A session per client was rejected: it is no single sign-
 account's session — and is not the cookie value, which is regenerated on every write so that
 session-fixation resistance is a stated property rather than an accident of what `SignInAsync` does
 today.** It is carried as a reserved claim the host neither supplies nor sees and kept across
-re-authentication of the same subject (`prompt=login` and `max_age` refresh `auth_time` only); a
+re-authentication of the same subject (`prompt=login` and `max_age` refresh its times, never its identifier); a
 subject the browser does not hold gets a new one. One derived from the cookie value breaks every
 binding the moment the cookie rotates, and one tracking authentication events could never key a
 denylist. Per account the cookie holds exactly what its one reader takes — `sub`, `zkd:sid`,

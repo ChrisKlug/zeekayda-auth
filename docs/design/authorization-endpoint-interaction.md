@@ -593,7 +593,7 @@ replaces the parked principal — and is refused when that subject is the upstre
 `OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt.
 It cannot add to the session: the session cookie holds only the framework's own claims, all its one
 reader takes (`signed-in-accounts.md`), and token claims never come from the session — they are
-resolved through `claims-resolution.md`'s provider on every issuance. A host that wants to keep
+resolved through the claims provider on every issuance (`token-issuance-and-claims.md`). A host that wants to keep
 something the provider returned stores it itself, in the hook or on a page of its own; a change to
 the principal `OnProviderSignIn` receives is not promoted, since the framework promotes only the
 derived subject.
