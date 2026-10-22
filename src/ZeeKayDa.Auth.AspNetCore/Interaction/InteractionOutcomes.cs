@@ -455,6 +455,16 @@ internal sealed class InteractionOutcomes(
 /// </summary>
 internal sealed record SignIn(
     SessionSubject Subject,
-    IReadOnlyList<string> AuthenticationMethods,
+    UserAuthentication Authentication,
     string? ProviderScheme,
-    AccountPlacement Placement);
+    AccountPlacement Placement)
+{
+    /// <summary>This sign-in, joining the accounts the browser holds rather than replacing them.</summary>
+    public SignIn Adding() => this with { Placement = Placement with { AddAccount = true } };
+}
+
+/// <summary>
+/// How the user proved who they are, reported to the client as <c>amr</c>, and when they did:
+/// <c>At</c> is <see langword="null"/> for now.
+/// </summary>
+internal sealed record UserAuthentication(IReadOnlyList<string> Methods, DateTimeOffset? At);

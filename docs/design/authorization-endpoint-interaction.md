@@ -448,7 +448,7 @@ public sealed class LoginInteraction   // singleton over IHttpContextAccessor, a
     Task<LoginRequest?> TryGetRequestAsync(CancellationToken cancellationToken = default);
 
     // The framework promotes the subject to the SSO session and continues the flow (consent →
-    // code → redirect). The session holds sub, zkd:sid, zkd:auth_time and zkd:amr, nothing else:
+    // code → redirect). The session holds only the framework's own claims (signed-in-accounts.md):
     // tokens and userinfo get their claims from IClaimsProvider. The subject is 1–255 printable
     // ASCII characters with no space (OIDC Core §2), refused at the call. [] omits amr.
     // Auto-consumes a principal parked for the interaction. Terminal. Throws ZeeKayDaInteractionException
@@ -591,9 +591,9 @@ promote the derived subject and takes no subject or claims, so the page cannot p
 replaces the parked principal — and is refused when that subject is the upstream one. Both consume the parked principal. One service per host page: the login page's
 `LoginInteraction` does not read the parked principal.
 `OnSigningIn` — **unbuilt** — will fire for every sign-in just before promotion, no interrupt.
-It cannot add to the session: the session cookie holds `sub`, `zkd:sid`, `zkd:auth_time` and
-`zkd:amr`, all its one reader takes, and token claims never come from the session — they are
-resolved through `claims-resolution.md`'s provider on every issuance. A host that wants to keep
+It cannot add to the session: the session cookie holds only the framework's own claims, all its one
+reader takes (`signed-in-accounts.md`), and token claims never come from the session — they are
+resolved through the claims provider on every issuance (`token-issuance-and-claims.md`). A host that wants to keep
 something the provider returned stores it itself, in the hook or on a page of its own; a change to
 the principal `OnProviderSignIn` receives is not promoted, since the framework promotes only the
 derived subject.

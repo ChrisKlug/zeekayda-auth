@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -187,7 +188,7 @@ public sealed class SsoSessionAccountsTests : IDisposable
 
         await browser.ChooseAsync(Alice, "client-2");
 
-        (await browser.TicketExpiryAsync()).Should().Be(bob.AuthTime + browser.Lifetime);
+        (await browser.TicketExpiryAsync()).Should().Be(bob.SignedInAt + browser.Lifetime);
         browser.Time.Advance(TimeSpan.FromDays(3));
         Subjects(await browser.ReadAsync()).Should().Equal(Bob);
     }
@@ -205,7 +206,7 @@ public sealed class SsoSessionAccountsTests : IDisposable
 
         await browser.EndAsync(Carol);
 
-        (await browser.TicketExpiryAsync()).Should().Be(bob.AuthTime + browser.Lifetime);
+        (await browser.TicketExpiryAsync()).Should().Be(bob.SignedInAt + browser.Lifetime);
         browser.Time.Advance(TimeSpan.FromDays(3));
         Subjects(await browser.ReadAsync()).Should().Equal(Bob);
     }
@@ -304,13 +305,72 @@ public sealed class SsoSessionAccountsTests : IDisposable
         sessions.Clients.Select(client => client.ClientId).Should().Equal("client-c", "client-b");
     }
 
+    // ── When the user authenticated ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_sign_in_from_an_earlier_authentication_holds_that_time_as_auth_time_and_now_as_its_sign_in()
+    {
+        var browser = NewBrowser();
+        var authenticatedAt = Start.AddHours(-3);
+
+        await browser.SignInAsync(Alice, authenticatedAt: authenticatedAt);
+
+        var alice = (await browser.ReadAsync()).Find(Alice)!;
+        alice.AuthTime.Should().Be(authenticatedAt);
+        alice.SignedInAt.Should().Be(Start);
+    }
+
+    [Fact]
+    public async Task An_authentication_time_later_than_now_is_held_as_now()
+    {
+        var browser = NewBrowser();
+
+        await browser.SignInAsync(Alice, authenticatedAt: Start.AddMinutes(5));
+
+        (await browser.ReadAsync()).Find(Alice)!.AuthTime.Should().Be(Start);
+    }
+
+    [Fact]
+    public async Task An_account_authenticated_longer_ago_than_the_lifetime_lives_a_full_lifetime_from_its_sign_in()
+    {
+        var browser = NewBrowser();
+        await browser.SignInAsync(Alice, authenticatedAt: Start - browser.Lifetime - TimeSpan.FromDays(1));
+
+        browser.Time.Advance(browser.Lifetime - TimeSpan.FromSeconds(1));
+
+        Subjects(await browser.ReadAsync()).Should().Equal(Alice);
+    }
+
+    [Fact]
+    public async Task The_ticket_expires_a_lifetime_after_the_sign_in_whatever_the_authentication_time()
+    {
+        var browser = NewBrowser();
+
+        await browser.SignInAsync(Alice, authenticatedAt: Start.AddDays(-1));
+
+        (await browser.TicketExpiryAsync()).Should().Be(Start + browser.Lifetime);
+    }
+
+    [Theory]
+    [InlineData(SsoSessionClaimTypes.AuthTime)]
+    [InlineData(SsoSessionClaimTypes.SignedInAt)]
+    public async Task An_account_missing_one_of_its_times_is_dropped_on_read(string missingClaimType)
+    {
+        var browser = NewBrowser();
+
+        await browser.WriteAccountWithoutAsync(Alice, missingClaimType);
+
+        (await browser.ReadAsync()).IsEmpty.Should().BeTrue();
+    }
+
     // ── Which account answers ─────────────────────────────────────────────────────────────────────
 
-    private static SsoSessionState Account(string subject, string? loginIdentifier, DateTimeOffset authTime) => new()
+    private static SsoSessionState Account(string subject, string? loginIdentifier, DateTimeOffset signedInAt) => new()
     {
         SessionId = "sid-" + subject,
         Subject = subject,
-        AuthTime = authTime,
+        AuthTime = signedInAt,
+        SignedInAt = signedInAt,
         Amr = [],
         LoginIdentifier = loginIdentifier,
     };
@@ -379,6 +439,21 @@ public sealed class SsoSessionAccountsTests : IDisposable
     }
 
     [Fact]
+    public void Without_a_hint_the_account_signed_in_most_recently_answers_though_it_authenticated_earliest()
+    {
+        SsoSessionList accounts = new(
+            [
+                Account(Alice, loginIdentifier: null, signedInAt: Start.AddMinutes(5)) with { AuthTime = Start.AddHours(-1) },
+                Account(Bob, loginIdentifier: null, signedInAt: Start),
+            ],
+            []);
+
+        var selected = accounts.Select("client-1", requiredSubject: null, loginHint: null);
+
+        selected!.Subject.Should().Be(Alice);
+    }
+
+    [Fact]
     public void Without_a_hint_a_client_whose_remembered_account_is_gone_gets_the_most_recently_signed_in()
     {
         var selected = TwoAccounts(new ClientAccount("client-1", Carol)).Select("client-1", requiredSubject: null, loginHint: null);
@@ -420,10 +495,11 @@ public sealed class SsoSessionAccountsTests : IDisposable
             string subject,
             bool addAccount = false,
             string? loginIdentifier = null,
-            string clientId = "client-1") =>
+            string clientId = "client-1",
+            DateTimeOffset? authenticatedAt = null) =>
             UseAsync((context, session) => session.PromoteAsync(
                 context,
-                new SignIn(SessionSubject.From(subject), [], ProviderScheme: null, new AccountPlacement(loginIdentifier, addAccount)),
+                new SignIn(SessionSubject.From(subject), new UserAuthentication([], authenticatedAt), ProviderScheme: null, new AccountPlacement(loginIdentifier, addAccount)),
                 clientId));
 
         public Task<SsoSessionList> ReadAsync() => UseAsync((context, session) => session.ReadAsync(context));
@@ -449,6 +525,27 @@ public sealed class SsoSessionAccountsTests : IDisposable
             {
                 var sessions = await session.ReadAsync(context);
                 await session.EndAsync(context, sessions, sessions.Find(subject)!);
+
+                return true;
+            });
+
+        /// <summary>
+        /// Writes the session cookie as the framework would for <paramref name="subject"/>, but without
+        /// the claim named <paramref name="omittedClaimType"/>.
+        /// </summary>
+        public Task WriteAccountWithoutAsync(string subject, string omittedClaimType) =>
+            UseAsync(async (context, _) =>
+            {
+                var now = Time.GetUtcNow().ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Claim[] claims =
+                [
+                    new("sub", subject),
+                    new(SsoSessionClaimTypes.SessionId, "sid-" + subject),
+                    new(SsoSessionClaimTypes.AuthTime, now),
+                    new(SsoSessionClaimTypes.SignedInAt, now),
+                ];
+                var identity = new ClaimsIdentity(claims.Where(claim => claim.Type != omittedClaimType), ZeeKayDaCookies.Session);
+                await context.SignInAsync(ZeeKayDaCookies.Session, new ClaimsPrincipal(identity));
 
                 return true;
             });

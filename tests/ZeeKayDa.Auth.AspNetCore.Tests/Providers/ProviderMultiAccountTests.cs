@@ -35,6 +35,25 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
     private async Task<string> StartAsync(string? idTokenHint = null) =>
         InteractionIdFrom(await _browser.AuthorizeAsync(prompt: idTokenHint is null ? "login" : null, idTokenHint: idTokenHint));
 
+    /// <summary>The page the hook parks the principal at, reached from a request demanding no fresh authentication.</summary>
+    private async Task<string> ParkWithoutPromptAsync()
+    {
+        _host.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        var parked = await ReturnFromProviderAsync(InteractionIdFrom(await _browser.AuthorizeAsync()));
+        parked.Headers.Location!.OriginalString.Should().StartWith(CollectMorePath);
+
+        return ProviderTestHost.WithInteractionId(CollectMorePath + "/link", InteractionIdFrom(parked));
+    }
+
+    private static Dictionary<string, string> LinkFields(DateTimeOffset? authenticatedAt = null)
+    {
+        var fields = new Dictionary<string, string> { ["sub"] = Linked };
+        if (authenticatedAt is { } at)
+            fields["authenticated_at"] = at.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        return fields;
+    }
+
     /// <summary>Picks the provider for the interaction, completes its callback, and returns through resume.</summary>
     private async Task<HttpResponseMessage> ReturnFromProviderAsync(string interactionId)
     {
@@ -180,6 +199,30 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
 
         session.Subjects.Should().Equal(Linked);
         session.Accounts[0].LoginId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_linking_page_can_say_when_the_user_authenticated()
+    {
+        var linkingPage = await ParkWithoutPromptAsync();
+        var authenticatedAt = _host.Time.GetUtcNow().AddMinutes(-30);
+
+        (await _browser.PostFormAsync(linkingPage, LinkFields(authenticatedAt))).ShouldHaveIssuedCodeTo(Redirect);
+
+        (await _browser.ReadSessionAsync()).Accounts.Should().ContainSingle().Which.AuthTime.Should().Be(authenticatedAt.ToUnixTimeSeconds());
+    }
+
+    [Fact]
+    public async Task A_linking_page_sign_in_that_is_not_fresh_enough_is_refused_and_the_parked_principal_kept()
+    {
+        _host.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        var parked = await ReturnFromProviderAsync(await StartAsync());
+        var linkingPage = ProviderTestHost.WithInteractionId(CollectMorePath + "/link", InteractionIdFrom(parked));
+
+        var stale = async () => await _browser.PostFormAsync(linkingPage, LinkFields(_host.Time.GetUtcNow().AddMinutes(-30)));
+
+        await stale.Should().ThrowAsync<ZeeKayDaInteractionException>();
+        (await _browser.PostFormAsync(linkingPage, LinkFields())).ShouldHaveIssuedCodeTo(Redirect);
     }
 
     // ── The login identifier setter ───────────────────────────────────────────────────────────────

@@ -156,7 +156,7 @@ public sealed class ProviderSignInContext
     /// The host decides here for every external sign-in, whether the framework signs the user in
     /// when the handler returns or a page of the host's finishes it after
     /// <see cref="RedirectToAsync"/>: what is set when that is called goes with the parked principal.
-    /// It works as <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string)"/>
+    /// It works as <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
     /// does for a local sign-in, cap included.
     /// </remarks>
     public bool AddAccount { get; set; }
@@ -171,7 +171,7 @@ public sealed class ProviderSignInContext
     /// Held to the rule a <c>login_hint</c> is: at most 256 characters, not blank, with no control,
     /// line-separator or invisible formatting character. A linking page that signs in a local account
     /// in the external user's place can give that account's own identifier instead, through
-    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>.
+    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>.
     /// </remarks>
     /// <example>
     /// <code>

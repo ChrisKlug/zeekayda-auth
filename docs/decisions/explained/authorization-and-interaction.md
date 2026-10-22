@@ -82,10 +82,11 @@ to the error page.
 browser cannot find or read it. At most 10 per browser. An ended interaction keeps a tombstone for a
 day holding only an encrypted client id, which is how a late click finds its client.
 
-**The SSO session is the `zkd.session` cookie** and nothing else: `sub`, `zkd:sid`, `zkd:auth_time`
-and `zkd:amr`, encrypted, browser-session lifetime. No other claim goes in, from a page or a
-provider. The session id is kept when the same user signs in again. A missing `auth_time` fails
-closed.
+**The SSO session is the `zkd.session` cookie** and nothing else: per account `sub`, `zkd:sid`,
+`zkd:auth_time`, `zkd:signed_in`, `zkd:amr` and an optional `zkd:login_id`, plus the clients each
+account answers, encrypted, browser-session lifetime. No other claim goes in, from a page or a
+provider. The session id is kept when the same user signs in again. A missing `auth_time` or
+`signed_in` fails closed.
 
 ## What it costs
 

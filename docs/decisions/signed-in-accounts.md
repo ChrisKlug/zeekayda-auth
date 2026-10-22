@@ -8,8 +8,8 @@ authorize endpoint's protocol rules are `authorization-and-interaction.md`; end-
 ## Decisions in force
 
 **Authentication is per browser; the account that answers is chosen per request.** `zkd.session`
-holds a list of accounts, each with its own session identifier, `auth_time`, methods and optional
-login identifier, so single sign-on across clients is unchanged and one browser can be signed in as
+holds a list of accounts, each with its own session identifier, `auth_time`, sign-in time, methods and
+optional login identifier, so single sign-on across clients is unchanged and one browser can be signed in as
 several users — the same app in two tabs, each refreshing silently with its own `id_token_hint`, is
 the case it exists for. A session per client was rejected: it is no single sign-on at all.
 
@@ -17,18 +17,25 @@ the case it exists for. A session per client was rejected: it is no single sign-
 account's session — and is not the cookie value, which is regenerated on every write so that
 session-fixation resistance is a stated property rather than an accident of what `SignInAsync` does
 today.** It is carried as a reserved claim the host neither supplies nor sees and kept across
-re-authentication of the same subject (`prompt=login` and `max_age` refresh `auth_time` only); a
+re-authentication of the same subject (`prompt=login` and `max_age` refresh its times, never its identifier); a
 subject the browser does not hold gets a new one. One derived from the cookie value breaks every
 binding the moment the cookie rotates, and one tracking authentication events could never key a
 denylist. Per account the cookie holds exactly what its one reader takes — `sub`, `zkd:sid`,
-`zkd:auth_time`, `zkd:amr`, and `zkd:login_id` when the sign-in gave one — plus one `zkd:client`
+`zkd:auth_time`, `zkd:signed_in`, `zkd:amr`, and `zkd:login_id` when the sign-in gave one — plus one `zkd:client`
 claim per remembered client; pages pass a subject and methods, never claims, and promotion copies no
 provider claim. A host's subject is 1–255 characters, each 0x21–0x7E (OIDC Core §2 caps `sub` at 255
 ASCII), refused at the call: a subject is compared exactly, so a stray space would make two users.
 
-**Each account lives for the cookie lifetime from its own last authentication.** A write for another
+**Each account lives for the cookie lifetime from its own last sign-in; `auth_time` is a second clock.**
+A page may sign in from an earlier authentication, such as a cookie of the host's own, and pass when
+it happened as `authenticatedAt` (capped at now): that is `auth_time`, which `max_age` and the ID
+token read (OIDC Core §3.1.2.1), while the account's life runs from the sign-in. A sign-in whose
+`authenticatedAt` was already older than the request's own `max_age` when the request was made, or
+under `prompt=login` earlier than the request, is refused at the page before anything is consumed;
+`max_age=0` is `prompt=login`. One shared clock was rejected: an old
+`authenticatedAt` would sign the user in already expired. A write for another
 account, a choice or a sign-out never lengthens any account's life: the ticket expires with the most
-recently authenticated account, and an account past its own lifetime is dropped on read.
+recently signed-in account, and an account past its own lifetime is dropped on read.
 
 **The account that answers: the one an `id_token_hint` names, else the one a `login_hint` names,
 else the client's own.** A hint naming no account here means that user must sign in — the login page

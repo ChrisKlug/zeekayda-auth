@@ -1,4 +1,5 @@
 using System.Buffers.Text;
+using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
@@ -97,6 +98,7 @@ internal static class MultiAccountHost
                         sub = identity.FindFirst("sub")?.Value,
                         sid = identity.FindFirst(SsoSessionClaimTypes.SessionId)?.Value,
                         loginId = identity.FindFirst(SsoSessionClaimTypes.LoginIdentifier)?.Value,
+                        authTime = long.Parse(identity.FindFirst(SsoSessionClaimTypes.AuthTime)!.Value, CultureInfo.InvariantCulture),
                     }),
                 clients = identities.SelectMany(identity => identity.FindAll(SsoSessionClaimTypes.ClientAccount)).Select(claim => claim.Value),
             });
@@ -105,7 +107,8 @@ internal static class MultiAccountHost
 
     /// <summary>
     /// The login page. The form says <c>mode=add</c> to add the account and nothing to replace the
-    /// accounts held; <c>login_id</c> is passed as typed, and left out when the form has none.
+    /// accounts held; <c>login_id</c> is passed as typed, and <c>authenticated_at</c> (Unix seconds)
+    /// as the time the user authenticated, each left out when the form has none.
     /// </summary>
     private static void MapLoginPage(IEndpointRouteBuilder endpoints)
     {
@@ -135,10 +138,12 @@ internal static class MultiAccountHost
             var subject = form["sub"].Single()!;
             string? loginIdentifier = form.TryGetValue("login_id", out var typed) ? typed.ToString() : null;
 
+            var authenticatedAt = AuthenticatedAtFrom(form);
+
             if (form["mode"] == "add")
-                await login.AddAccountAsync(subject, AuthenticationMethods.Password, loginIdentifier);
+                await login.AddAccountAsync(subject, AuthenticationMethods.Password, loginIdentifier, authenticatedAt);
             else
-                await login.SignInAsync(subject, AuthenticationMethods.Password, loginIdentifier);
+                await login.SignInAsync(subject, AuthenticationMethods.Password, loginIdentifier, authenticatedAt);
         });
     }
 
@@ -209,16 +214,22 @@ internal static class MultiAccountHost
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             string? loginIdentifier = form.TryGetValue("login_id", out var typed) ? typed.ToString() : null;
 
-            await linking.SignInWithReplacedAccountAsync(form["sub"].Single()!, AuthenticationMethods.Password, loginIdentifier);
+            await linking.SignInWithReplacedAccountAsync(
+                form["sub"].Single()!, AuthenticationMethods.Password, loginIdentifier, AuthenticatedAtFrom(form));
         });
 
         // The page that asks for nothing more: the framework signs in the provider's derived subject.
         endpoints.MapPost(CollectMorePath, (ProviderSignInInteraction linking) => linking.SignInAsync());
     }
+
+    private static DateTimeOffset? AuthenticatedAtFrom(IFormCollection form) =>
+        form.TryGetValue("authenticated_at", out var seconds)
+            ? DateTimeOffset.FromUnixTimeSeconds(long.Parse(seconds.ToString(), CultureInfo.InvariantCulture))
+            : null;
 }
 
 /// <summary>One account in the session cookie, as the probe reports it.</summary>
-internal sealed record AccountView(string Sub, string Sid, string? LoginId);
+internal sealed record AccountView(string Sub, string Sid, string? LoginId, long AuthTime);
 
 /// <summary>Everything the session cookie holds: the accounts, newest first, and the client-to-account notes.</summary>
 internal sealed record SessionView(IReadOnlyList<AccountView> Accounts, IReadOnlyList<string> Clients)
@@ -280,13 +291,16 @@ internal sealed class MultiAccountBrowser(HttpClient client)
         return await PostLoginAsync(Location(authorize), subject, add, loginIdentifier);
     }
 
-    public Task<HttpResponseMessage> PostLoginAsync(string loginUrl, string subject, bool add = true, string? loginIdentifier = null)
+    public Task<HttpResponseMessage> PostLoginAsync(
+        string loginUrl, string subject, bool add = true, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
         var fields = new Dictionary<string, string> { ["sub"] = subject };
         if (add)
             fields["mode"] = "add";
         if (loginIdentifier is not null)
             fields["login_id"] = loginIdentifier;
+        if (authenticatedAt is { } at)
+            fields["authenticated_at"] = at.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
         return PostFormAsync(loginUrl, fields);
     }
@@ -295,6 +309,19 @@ internal sealed class MultiAccountBrowser(HttpClient client)
     {
         using var form = new FormUrlEncodedContent(fields ?? new Dictionary<string, string>());
         return await Client.PostAsync(url, form, Cancellation);
+    }
+
+    /// <summary>
+    /// Signs <paramref name="subject"/> in the way a page does from a cookie of the host's own: through a
+    /// request that demands no fresh authentication, passing when the user authenticated. Returns the
+    /// login page's post response.
+    /// </summary>
+    public async Task<HttpResponseMessage> SignInFromHostCookieAsync(string subject, DateTimeOffset authenticatedAt, bool add = true)
+    {
+        var authorize = await AuthorizeAsync();
+        ShouldHaveGoneTo(authorize, MultiAccountHost.LoginPath);
+
+        return await PostLoginAsync(Location(authorize), subject, add, loginIdentifier: null, authenticatedAt);
     }
 
     /// <summary>Signs in as <paramref name="subject"/> and redeems the code: an ID token to send as a hint.</summary>
@@ -348,6 +375,12 @@ internal sealed class MultiAccountBrowser(HttpClient client)
     {
         using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(idToken.Split('.')[1]));
         return payload.RootElement.GetProperty("sub").GetString()!;
+    }
+
+    public static DateTimeOffset AuthTimeOf(string idToken)
+    {
+        using var payload = JsonDocument.Parse(Base64Url.DecodeFromChars(idToken.Split('.')[1]));
+        return DateTimeOffset.FromUnixTimeSeconds(payload.RootElement.GetProperty("auth_time").GetInt64());
     }
 
     public static string Location(HttpResponseMessage response) => response.Headers.Location!.OriginalString;

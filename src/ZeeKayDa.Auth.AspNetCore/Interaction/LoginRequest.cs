@@ -58,10 +58,11 @@ public sealed class LoginRequest
     /// </summary>
     /// <remarks>
     /// When this is <see langword="true"/>, the page must have the user actively authenticate
-    /// before calling <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string)"/>:
+    /// before calling <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>:
     /// a cookie of the host's own, or any other sign-in the user already holds, is not enough. When
     /// it is <see langword="false"/>, a page may sign in a user it already knows without asking
-    /// for credentials again.
+    /// for credentials again, passing when that user authenticated as <c>authenticatedAt</c> so a
+    /// later <c>max_age</c> is judged against it.
     /// </remarks>
     public bool ReauthenticationRequired { get; }
 
@@ -80,8 +81,8 @@ public sealed class LoginRequest
 
     /// <summary>
     /// The accounts this browser is signed in to, the most recently used first, for a page that asks
-    /// whether to keep them signed in: <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string)"/>
-    /// keeps them, <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string)"/>
+    /// whether to keep them signed in: <see cref="LoginInteraction.AddAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
+    /// keeps them, <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
     /// signs them out. Empty when it holds none.
     /// </summary>
     /// <remarks>

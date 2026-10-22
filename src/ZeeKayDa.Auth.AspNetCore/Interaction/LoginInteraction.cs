@@ -16,8 +16,8 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// <c>&lt;form method="post"&gt;</c> does by default.
 /// </para>
 /// <para>
-/// <strong>Terminal methods</strong> — <see cref="SignInAsync(string, IEnumerable{string}, string)"/>,
-/// <see cref="AddAccountAsync(string, IEnumerable{string}, string)"/>, <see cref="DenyAsync"/> and
+/// <strong>Terminal methods</strong> — <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>,
+/// <see cref="AddAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>, <see cref="DenyAsync"/> and
 /// <see cref="ChallengeAsync"/> — write and commit the response, so each
 /// must be the last thing the page does. A Razor Pages handler or controller action can simply end
 /// after it: the framework skips MVC's result. Anywhere else, returning a result of your own
@@ -168,9 +168,16 @@ public sealed class LoginInteraction
     /// matched against a client's <c>login_hint</c>. <see langword="null"/> uses
     /// <paramref name="subject"/> for both.
     /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -179,17 +186,17 @@ public sealed class LoginInteraction
     /// <exception cref="ArgumentException">
     /// <paramref name="subject"/> is not 1–255 printable ASCII characters with no space,
     /// <paramref name="authenticationMethod"/> is null or blank, or <paramref name="loginIdentifier"/>
-    /// breaks the rule <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.
+    /// breaks the rule <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public Task SignInAsync(string subject, string authenticationMethod, string? loginIdentifier = null)
+    public Task SignInAsync(string subject, string authenticationMethod, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return SignInAsync(subject, [authenticationMethod], loginIdentifier);
+        return SignInAsync(subject, [authenticationMethod], loginIdentifier, authenticatedAt);
     }
 
     /// <summary>
@@ -217,6 +224,13 @@ public sealed class LoginInteraction
     /// <c>login_hint</c> equal to the subject selects this account: a client that sends email
     /// addresses as hints gets the login page every time.
     /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, which the client receives as <c>auth_time</c> and a later
+    /// request's <c>max_age</c> is judged against (OpenID Connect Core §3.1.2.1). Pass it when the page
+    /// signs in from an earlier authentication, such as a cookie of the host's own, so that a later
+    /// <c>max_age</c> asks the user again. <see langword="null"/> means now, and a later time is taken
+    /// as now. It does not shorten how long the account stays signed in here.
+    /// </param>
     /// <remarks>
     /// <para>
     /// Terminal (see the class remarks). The arguments are copied when the call is made, so what was
@@ -225,7 +239,7 @@ public sealed class LoginInteraction
     /// </para>
     /// <para>
     /// This replaces the accounts the browser holds, which is the safe default on a shared computer:
-    /// the previous user is signed out. <see cref="AddAccountAsync(string, IEnumerable{string}, string)"/>
+    /// the previous user is signed out. <see cref="AddAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
     /// keeps them instead. Signing in again as an account the browser holds keeps its session
     /// identifier either way.
     /// </para>
@@ -236,9 +250,16 @@ public sealed class LoginInteraction
     /// <para>
     /// When <see cref="LoginRequest.ReauthenticationRequired"/> is <see langword="true"/>, call this
     /// only after the user has actively authenticated on the page: a cookie of the host's own is not
-    /// enough (OpenID Connect Core §3.1.2.3).
+    /// enough (OpenID Connect Core §3.1.2.3). When it is <see langword="false"/> and the page signs in
+    /// from such a cookie, pass when that cookie's authentication happened as
+    /// <paramref name="authenticatedAt"/>.
     /// </para>
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is older than the request's <c>max_age</c>, or, under
+    /// <c>prompt=login</c>, earlier than the request: <see cref="LoginRequest.ReauthenticationRequired"/>
+    /// was <see langword="true"/> and the user did not authenticate again. Nothing was signed in.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -255,24 +276,32 @@ public sealed class LoginInteraction
     /// The request is not a <c>POST</c> — only the login form's submission may sign in, and that
     /// is checked before anything is read — or there is no active HTTP request.
     /// </exception>
-    public Task SignInAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null) =>
-        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, addAccount: false));
+    public Task SignInAsync(
+        string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null) =>
+        CompleteAsync(SignInArguments.Page(subject, authenticationMethods, loginIdentifier, authenticatedAt));
 
     /// <summary>
     /// Signs the user in as <paramref name="subject"/>, authenticated by
     /// <paramref name="authenticationMethod"/>, beside the accounts this browser already holds, and
     /// continues the authorization request that led here.
     /// </summary>
-    /// <param name="subject">The user's identifier, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.</param>
+    /// <param name="subject">The user's identifier, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.</param>
     /// <param name="authenticationMethod">
-    /// How the user proved who they are, on the terms <see cref="SignInAsync(string, string, string)"/> states.
+    /// How the user proved who they are, on the terms <see cref="SignInAsync(string, string, string, DateTimeOffset?)"/> states.
     /// </param>
     /// <param name="loginIdentifier">
-    /// What the user signs in with, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.
+    /// What the user signs in with, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -280,33 +309,36 @@ public sealed class LoginInteraction
     /// <exception cref="ArgumentNullException"><paramref name="subject"/> is null.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="subject"/>, <paramref name="authenticationMethod"/> or
-    /// <paramref name="loginIdentifier"/> breaks the rule <see cref="SignInAsync(string, string, string)"/> states.
+    /// <paramref name="loginIdentifier"/> breaks the rule <see cref="SignInAsync(string, string, string, DateTimeOffset?)"/> states.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public Task AddAccountAsync(string subject, string authenticationMethod, string? loginIdentifier = null)
+    public Task AddAccountAsync(string subject, string authenticationMethod, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return AddAccountAsync(subject, [authenticationMethod], loginIdentifier);
+        return AddAccountAsync(subject, [authenticationMethod], loginIdentifier, authenticatedAt);
     }
 
     /// <summary>
     /// Signs the user in as <paramref name="subject"/> beside the accounts this browser already
     /// holds, and continues the authorization request that led here.
     /// </summary>
-    /// <param name="subject">The user's identifier, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.</param>
+    /// <param name="subject">The user's identifier, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.</param>
     /// <param name="authenticationMethods">
-    /// How the user proved who they are, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.
+    /// How the user proved who they are, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </param>
     /// <param name="loginIdentifier">
-    /// What the user signs in with, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string)"/>
+    /// What the user signs in with, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
     /// states. Give one: it is what the account picker shows the user for this account.
+    /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, on the terms <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </param>
     /// <remarks>
     /// <para>
-    /// Exactly <see cref="SignInAsync(string, IEnumerable{string}, string)"/>, except that the other
+    /// Exactly <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>, except that the other
     /// accounts stay signed in. The page decides when to add: it may ask the user ("keep
     /// alice@contoso.com signed in?"), or always add on a host whose devices are personal. On a
     /// shared computer, adding leaves the previous user signed in and selectable on the account
@@ -327,6 +359,10 @@ public sealed class LoginInteraction
     /// </code>
     /// </example>
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -336,19 +372,21 @@ public sealed class LoginInteraction
     /// </exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="subject"/>, an entry in <paramref name="authenticationMethods"/>, or
-    /// <paramref name="loginIdentifier"/> breaks the rule <see cref="SignInAsync(string, IEnumerable{string}, string)"/> states.
+    /// <paramref name="loginIdentifier"/> breaks the rule <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public Task AddAccountAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null) =>
-        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, addAccount: true));
+    public Task AddAccountAsync(
+        string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null) =>
+        CompleteAsync(SignInArguments.Page(subject, authenticationMethods, loginIdentifier, authenticatedAt).Adding());
 #pragma warning restore RS0026
 
     /// <summary>Signs in what the arguments, already checked, describe.</summary>
     private Task CompleteAsync(SignIn signIn) =>
         StepAsync(async (context, requestContext) =>
         {
+            _services.Flow.ThrowIfNotFreshEnough(requestContext, signIn.Authentication.At);
             await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
             await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
         });

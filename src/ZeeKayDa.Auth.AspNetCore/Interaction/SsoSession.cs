@@ -20,6 +20,9 @@ internal static class SsoSessionClaimTypes
     /// <summary>When the user last authenticated, as Unix seconds.</summary>
     public const string AuthTime = "zkd:auth_time";
 
+    /// <summary>When this browser last signed the account in, as Unix seconds; the account's lifetime runs from it.</summary>
+    public const string SignedInAt = "zkd:signed_in";
+
     /// <summary>An authentication method reference. One claim per value.</summary>
     public const string Amr = "zkd:amr";
 
@@ -37,7 +40,11 @@ internal sealed record SsoSessionState
 
     public required string Subject { get; init; }
 
+    /// <summary>When the user authenticated: the <c>auth_time</c> that <c>max_age</c> is judged against.</summary>
     public required DateTimeOffset AuthTime { get; init; }
+
+    /// <summary>When this browser last signed the account in, which its lifetime runs from; never before <see cref="AuthTime"/>.</summary>
+    public required DateTimeOffset SignedInAt { get; init; }
 
     public required IReadOnlyList<string> Amr { get; init; }
 
@@ -98,20 +105,20 @@ internal sealed class SsoSessionList(IReadOnlyList<SsoSessionState> accounts, IR
     {
         var remembered = Clients.FirstOrDefault(client => string.Equals(client.ClientId, clientId, StringComparison.Ordinal));
 
-        return (remembered is null ? null : Find(remembered.Subject)) ?? Accounts.MaxBy(account => account.AuthTime);
+        return (remembered is null ? null : Find(remembered.Subject)) ?? Accounts.MaxBy(account => account.SignedInAt);
     }
 }
 
 /// <summary>
 /// Reads and writes the SSO session, which <em>is</em> the <c>zkd.session</c> cookie: there is no
 /// server-side record. The cookie holds every account the browser is signed in to, each with its
-/// own session identifier and authentication time.
+/// own session identifier, authentication time and sign-in time.
 /// </summary>
 /// <remarks>
 /// The cookie is rewritten on every promotion against session fixation; an account's session
 /// identifier survives its re-authentication, so what is bound to it stays bound. An account lives
-/// for the session cookie's lifetime from its own last authentication, however often the cookie is
-/// rewritten for another.
+/// for the session cookie's lifetime from its own last sign-in, however often the cookie is
+/// rewritten for another, and however long before that sign-in the page says the user authenticated.
 /// </remarks>
 internal sealed class SsoSession(
     TimeProvider timeProvider,
@@ -143,7 +150,7 @@ internal sealed class SsoSession(
             .Where(identity => identity.AuthenticationType == ZeeKayDaCookies.Session)
             .Select(ReadAccount)
             .OfType<SsoSessionState>()
-            .Where(account => now < account.AuthTime + Lifetime);
+            .Where(account => now < account.SignedInAt + Lifetime);
 
         var clients = result.Principal.Identities
             .Where(identity => identity.AuthenticationType == ClientsIdentityType)
@@ -169,13 +176,15 @@ internal sealed class SsoSession(
         var current = await ReadAsync(context).ConfigureAwait(false);
         var subject = signIn.Subject.Value;
         var held = current.Find(subject);
+        var now = timeProvider.GetUtcNow();
 
         var account = new SsoSessionState
         {
             SessionId = held?.SessionId ?? StoreKeyGenerator.Generate(),
             Subject = subject,
-            AuthTime = timeProvider.GetUtcNow(),
-            Amr = [.. signIn.AuthenticationMethods],
+            AuthTime = signIn.Authentication.At < now ? signIn.Authentication.At.Value : now,
+            SignedInAt = now,
+            Amr = [.. signIn.Authentication.Methods],
             LoginIdentifier = signIn.Placement.LoginIdentifier,
         };
 
@@ -249,8 +258,8 @@ internal sealed class SsoSession(
         accounts.Where(account => !string.Equals(account.Subject, excluded.Subject, StringComparison.Ordinal));
 
     /// <summary>
-    /// Writes the list, expiring with its most recently authenticated account: a write for a choice
-    /// or a sign-out never lengthens any account's life.
+    /// Writes the list, expiring with its most recently signed-in account: a write for a choice or a
+    /// sign-out never lengthens any account's life.
     /// </summary>
     private async Task WriteAsync(HttpContext context, SsoSessionList list)
     {
@@ -264,7 +273,7 @@ internal sealed class SsoSession(
         {
             IsPersistent = false,
             IssuedUtc = timeProvider.GetUtcNow(),
-            ExpiresUtc = list.Accounts.Max(account => account.AuthTime) + Lifetime,
+            ExpiresUtc = list.Accounts.Max(account => account.SignedInAt) + Lifetime,
         };
 
         await context.SignInAsync(ZeeKayDaCookies.Session, new ClaimsPrincipal(identities), properties).ConfigureAwait(false);
@@ -278,6 +287,7 @@ internal sealed class SsoSession(
             new(SubjectClaimType, state.Subject),
             new(SsoSessionClaimTypes.SessionId, state.SessionId),
             new(SsoSessionClaimTypes.AuthTime, state.AuthTime.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
+            new(SsoSessionClaimTypes.SignedInAt, state.SignedInAt.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)),
             .. state.Amr.Select(value => new Claim(SsoSessionClaimTypes.Amr, value)),
             .. state.LoginIdentifier is { } loginIdentifier ? [new Claim(SsoSessionClaimTypes.LoginIdentifier, loginIdentifier)] : Array.Empty<Claim>(),
         ];
@@ -288,7 +298,7 @@ internal sealed class SsoSession(
     private static ClaimsIdentity BuildClientsIdentity(IEnumerable<ClientAccount> clients) =>
         new(clients.Select(client => new Claim(SsoSessionClaimTypes.ClientAccount, $"{client.Subject} {client.ClientId}")), ClientsIdentityType);
 
-    /// <summary>The account an identity holds, or <see langword="null"/> without a readable identifier and subject.</summary>
+    /// <summary>The account an identity holds, or <see langword="null"/> without a readable identifier, subject and times.</summary>
     private static SsoSessionState? ReadAccount(ClaimsIdentity identity)
     {
         var sessionId = identity.FindFirst(SsoSessionClaimTypes.SessionId)?.Value;
@@ -296,11 +306,18 @@ internal sealed class SsoSession(
         if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(subject))
             return null;
 
+        if (ReadTime(identity, SsoSessionClaimTypes.AuthTime) is not { } authTime
+            || ReadTime(identity, SsoSessionClaimTypes.SignedInAt) is not { } signedInAt)
+        {
+            return null;
+        }
+
         return new SsoSessionState
         {
             SessionId = sessionId,
             Subject = subject,
-            AuthTime = ReadAuthTime(identity),
+            AuthTime = authTime,
+            SignedInAt = signedInAt,
             Amr = identity.FindAll(SsoSessionClaimTypes.Amr).Select(claim => claim.Value).ToArray(),
             LoginIdentifier = identity.FindFirst(SsoSessionClaimTypes.LoginIdentifier)?.Value is { Length: > 0 } loginIdentifier ? loginIdentifier : null,
         };
@@ -316,13 +333,12 @@ internal sealed class SsoSession(
             : null;
     }
 
-    /// <summary>Reads <c>auth_time</c>; unreadable is infinitely old, so the account has expired.</summary>
-    private static DateTimeOffset ReadAuthTime(ClaimsIdentity identity)
+    private static DateTimeOffset? ReadTime(ClaimsIdentity identity, string claimType)
     {
-        var value = identity.FindFirst(SsoSessionClaimTypes.AuthTime)?.Value;
+        var value = identity.FindFirst(claimType)?.Value;
 
         return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
-            : DateTimeOffset.MinValue;
+            : null;
     }
 }
