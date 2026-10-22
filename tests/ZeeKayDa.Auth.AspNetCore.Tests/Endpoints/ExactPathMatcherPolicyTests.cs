@@ -12,7 +12,7 @@ public sealed class ExactPathMatcherPolicyTests
         _ => Task.CompletedTask,
         pattern,
         order: 0,
-        new EndpointMetadataCollection(ExactPathMetadata.Instance),
+        new EndpointMetadataCollection(FrameworkEndpointMetadata.Instance),
         displayName: "marked");
 
     [Fact]

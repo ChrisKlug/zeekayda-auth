@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
@@ -150,6 +151,9 @@ public static class ZeeKayDaAuthServiceCollectionExtensions
         // Every framework route matches its path exactly; see ExactPathMatcherPolicy.
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<MatcherPolicy, ExactPathMatcherPolicy>());
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupFilter, EndpointRateLimitingStartupFilter>());
 
         // The composite as its concrete type, so it cannot dispatch to itself.
         services.TryAddEnumerable(

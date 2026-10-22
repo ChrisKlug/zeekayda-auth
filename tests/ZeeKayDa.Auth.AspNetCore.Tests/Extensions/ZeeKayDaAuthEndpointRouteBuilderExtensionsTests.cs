@@ -60,7 +60,7 @@ public sealed class ZeeKayDaAuthEndpointRouteBuilderExtensionsTests(EveryRouteHo
     {
         var mapped = everyRoute.Services.GetRequiredService<EndpointDataSource>().Endpoints
             .OfType<RouteEndpoint>()
-            .Where(endpoint => endpoint.Metadata.GetMetadata<ExactPathMetadata>() is not null)
+            .Where(endpoint => endpoint.Metadata.GetMetadata<FrameworkEndpointMetadata>() is not null)
             .Select(endpoint => (
                 Path: endpoint.RoutePattern.RawText,
                 Methods: endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? []))

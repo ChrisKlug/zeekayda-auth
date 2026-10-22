@@ -21,17 +21,26 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
     /// </summary>
     /// <param name="endpoints">The route builder to register endpoints on.</param>
     /// <returns>
-    /// The <paramref name="endpoints"/> builder so that calls can be chained.
+    /// A builder for conventions on the framework's endpoints only, such as the host's rate limiter:
+    /// <c>app.MapZeeKayDaAuth().RequireRateLimiting("policy")</c>.
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="endpoints"/> is <see langword="null"/>.
     /// </exception>
     /// <remarks>
+    /// <para>
     /// Endpoint implementations are discovered automatically from DI via
     /// <see cref="IZeeKayDaEndpoint"/>. Call <c>services.AddZeeKayDaAuth()</c> during service
     /// registration to ensure all required services are available.
+    /// </para>
+    /// <para>
+    /// The framework applies no rate limiting of its own; the host's limiter is the control, and
+    /// <c>UseRateLimiter()</c> must follow an explicit <c>UseRouting()</c> or no endpoint is limited.
+    /// Outside Development, startup warns when an endpoint carries no policy attached here and no
+    /// global limiter is configured.
+    /// </para>
     /// </remarks>
-    public static IEndpointRouteBuilder MapZeeKayDaAuth(this IEndpointRouteBuilder endpoints)
+    public static IEndpointConventionBuilder MapZeeKayDaAuth(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
@@ -51,8 +60,7 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
         // The filters below apply to the framework's endpoints, never the host's routes.
         var group = endpoints.MapGroup("");
 
-        // A URL path is case-sensitive (RFC 3986 §6.2.2.1); routing literals are not.
-        group.WithMetadata(ExactPathMetadata.Instance);
+        group.WithMetadata(FrameworkEndpointMetadata.Instance);
 
         group.AddEndpointFilter(async (context, next) =>
         {
@@ -91,6 +99,6 @@ public static class ZeeKayDaAuthEndpointRouteBuilderExtensions
             endpoint.Map(group);
         }
 
-        return endpoints;
+        return group;
     }
 }
