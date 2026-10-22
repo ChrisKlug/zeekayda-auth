@@ -451,10 +451,12 @@ internal sealed class InteractionOutcomes(
 
 /// <summary>
 /// What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local
-/// sign-in, and <c>Placement</c> says whether it joins the accounts the browser holds.
+/// sign-in, <c>Placement</c> says whether it joins the accounts the browser holds, and
+/// <c>AuthenticatedAt</c> is when the user authenticated, <see langword="null"/> for now.
 /// </summary>
 internal sealed record SignIn(
     SessionSubject Subject,
     IReadOnlyList<string> AuthenticationMethods,
     string? ProviderScheme,
-    AccountPlacement Placement);
+    AccountPlacement Placement,
+    DateTimeOffset? AuthenticatedAt);

@@ -409,7 +409,7 @@ public sealed class ProviderSignInEventTests : IClassFixture<ProviderSignInHostF
         var session = (await ReadJsonAsync(client, "/test/session"))!.Value;
         session.GetProperty("sub").GetString().Should().Be(ExternalSubject.Derive(AcmeIssuer, UpstreamSubject), "the upstream subject never enters the session");
         session.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
-            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount], "the provider's name claim stays out");
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.SignedInAt, SsoSessionClaimTypes.ClientAccount], "the provider's name claim stays out");
         session.GetProperty("amr").EnumerateArray().Should().BeEmpty("nothing is stated about how the user authenticated at the provider");
         (await ReadJsonAsync(client, collectMore)).Should().BeNull("the parked principal is single-use");
         StoreEntryCount(factory).Should().Be(1, "the context stays until the flow ends; the parked principal is gone");

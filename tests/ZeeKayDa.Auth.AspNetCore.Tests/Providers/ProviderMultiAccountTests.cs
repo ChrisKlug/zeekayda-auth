@@ -59,7 +59,7 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
     }
 
     /// <summary>The hook parks the principal at the linking page; the page signs <see cref="Linked"/> in.</summary>
-    private async Task<SessionView> LinkAsync(string? pageLoginIdentifier)
+    private async Task<SessionView> LinkAsync(string? pageLoginIdentifier, DateTimeOffset? authenticatedAt = null)
     {
         var parked = await ReturnFromProviderAsync(await StartAsync());
         parked.Headers.Location!.OriginalString.Should().StartWith(CollectMorePath);
@@ -67,6 +67,8 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
         var fields = new Dictionary<string, string> { ["sub"] = Linked };
         if (pageLoginIdentifier is not null)
             fields["login_id"] = pageLoginIdentifier;
+        if (authenticatedAt is { } at)
+            fields["authenticated_at"] = at.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
         var linked = await _browser.PostFormAsync(ProviderTestHost.WithInteractionId(CollectMorePath + "/link", InteractionIdFrom(parked)), fields);
         linked.ShouldHaveIssuedCodeTo(Redirect);
 
@@ -180,6 +182,17 @@ public sealed class ProviderMultiAccountTests : IClassFixture<MultiAccountProvid
 
         session.Subjects.Should().Equal(Linked);
         session.Accounts[0].LoginId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_linking_page_can_say_when_the_user_authenticated()
+    {
+        _host.OnProviderSignIn = context => context.RedirectToAsync(CollectMorePath);
+        var authenticatedAt = _host.Time.GetUtcNow().AddMinutes(-30);
+
+        var session = await LinkAsync(pageLoginIdentifier: null, authenticatedAt);
+
+        session.Accounts.Should().ContainSingle().Which.AuthTime.Should().Be(authenticatedAt.ToUnixTimeSeconds());
     }
 
     // ── The login identifier setter ───────────────────────────────────────────────────────────────

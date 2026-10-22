@@ -135,4 +135,41 @@ public sealed class LoginInteractionAccountsTests : IClassFixture<MultiAccountHo
 
         page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeFalse();
     }
+
+    // ── When the user authenticated ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_sign_in_from_an_earlier_authentication_sends_a_later_max_age_request_to_authenticate_again()
+    {
+        var alicesHint = await _browser.IdTokenForAsync(Alice, authenticatedAt: _host.Time.GetUtcNow().AddMinutes(-10));
+        var login = await _browser.AuthorizeAsync(idTokenHint: alicesHint, maxAge: "300");
+        ShouldHaveGoneTo(login, LoginPath);
+
+        var page = await _browser.GetPageAsync(Location(login));
+
+        page.GetProperty("reauthenticationRequired").GetBoolean().Should().BeTrue("alice authenticated ten minutes ago, though the page signed her in just now");
+    }
+
+    [Fact]
+    public async Task An_authentication_time_in_the_future_is_taken_as_now_so_it_cannot_satisfy_a_later_max_age()
+    {
+        var alicesHint = await _browser.IdTokenForAsync(Alice, authenticatedAt: _host.Time.GetUtcNow().AddDays(1));
+        _host.Time.Advance(TimeSpan.FromMinutes(10));
+
+        var login = await _browser.AuthorizeAsync(idTokenHint: alicesHint, maxAge: "300");
+
+        ShouldHaveGoneTo(login, LoginPath);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task The_ID_token_auth_time_is_when_the_page_says_the_user_authenticated(bool add)
+    {
+        var authenticatedAt = _host.Time.GetUtcNow().AddHours(-2);
+
+        var idToken = await _browser.IdTokenForAsync(Alice, add, authenticatedAt: authenticatedAt);
+
+        AuthTimeOf(idToken).Should().Be(authenticatedAt);
+    }
 }

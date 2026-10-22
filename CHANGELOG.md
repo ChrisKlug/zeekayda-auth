@@ -16,6 +16,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   set to exactly that value. Name the
   upstream identity provider, such as by its issuer URL, and never reuse the value for a different
   provider. OpenID Connect providers are unaffected: they stamp the ID token's issuer.
+- **A page sign-in can say when the user actually authenticated** (#1034). `LoginInteraction.SignInAsync`,
+  `AddAccountAsync` and `ProviderSignInInteraction.SignInWithReplacedAccountAsync` take an optional
+  `authenticatedAt`, which becomes the account's `auth_time`: what `max_age` is judged against and the ID
+  token's `auth_time` (OIDC Core §3.1.2.1). A page that signs a user in from a cookie of its own, because
+  `LoginRequest.ReauthenticationRequired` is false, passes that cookie's authentication time, so a later
+  `max_age` asks the user again instead of being satisfied by the fresh sign-in. `null` means now, and a
+  later time is taken as now. Each account now carries a second time, `zkd:signed_in`, which its
+  lifetime and the cookie's expiry run from, so an older `authenticatedAt` does not shorten how long it
+  stays signed in.
 - **A host attaches its rate limiter to the framework's endpoints, and is warned when none reaches
   them** (#963). `MapZeeKayDaAuth()` now returns an `IEndpointConventionBuilder` for the framework's
   endpoints alone, so `app.MapZeeKayDaAuth().RequireRateLimiting("policy")` limits them and not the

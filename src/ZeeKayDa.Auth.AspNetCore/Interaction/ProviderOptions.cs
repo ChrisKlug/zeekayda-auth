@@ -16,7 +16,7 @@ public sealed class ProviderOptions
     /// sending the user to a host page that finishes through <see cref="ProviderSignInInteraction"/>,
     /// or with <see cref="ProviderSignInContext.DenyAsync"/>. Calling neither promotes the principal.
     /// This is where a host chooses the subject an external user gets, through
-    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>
+    /// <see cref="ProviderSignInInteraction.SignInWithReplacedAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
     /// on that page; otherwise the default <see cref="ExternalSubject.Derive"/>(issuer, subject) applies.
     /// It is also where the host decides whether the user joins the accounts the browser holds or
     /// replaces them, and what the account picker shows for them, through

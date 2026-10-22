@@ -9,12 +9,13 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 internal static class SignInArguments
 {
     /// <summary>A local sign-in, its arguments checked and copied.</summary>
-    public static SignIn Local(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, bool addAccount)
+    public static SignIn Local(
+        string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, DateTimeOffset? authenticatedAt, bool addAccount)
     {
         var user = SessionSubject.From(subject);
         var methods = Methods(authenticationMethods);
 
-        return new SignIn(user, methods, ProviderScheme: null, new AccountPlacement(LoginIdentifier(loginIdentifier), addAccount));
+        return new SignIn(user, methods, ProviderScheme: null, new AccountPlacement(LoginIdentifier(loginIdentifier), addAccount), authenticatedAt);
     }
 
     /// <summary>

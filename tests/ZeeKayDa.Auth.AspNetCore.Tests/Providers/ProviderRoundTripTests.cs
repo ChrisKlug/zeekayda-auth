@@ -227,7 +227,7 @@ public sealed class ProviderRoundTripTests : IClassFixture<ProviderRoundTripHost
             .Should().ContainSingle()
             .Which.Should().NotStartWith($"{ZeeKayDaCookies.Session}=chunks-");
         (await ReadSessionAsync(client))!.Value.GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
-            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.ClientAccount]);
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.SignedInAt, SsoSessionClaimTypes.ClientAccount]);
     }
 
     [Fact]

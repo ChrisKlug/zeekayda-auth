@@ -878,7 +878,7 @@ public sealed class LoginInteractionTests : IClassFixture<LoginInteractionHostFi
         await PostLoginAsync(InteractionIdFrom(handoff), ("sub", "user-1"));
 
         (await ReadSessionAsync()).GetProperty("claimTypes").EnumerateArray().Select(type => type.GetString())
-            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.Amr, SsoSessionClaimTypes.ClientAccount]);
+            .Should().BeEquivalentTo(["sub", SsoSessionClaimTypes.SessionId, SsoSessionClaimTypes.AuthTime, SsoSessionClaimTypes.SignedInAt, SsoSessionClaimTypes.Amr, SsoSessionClaimTypes.ClientAccount]);
     }
 
     [Fact]

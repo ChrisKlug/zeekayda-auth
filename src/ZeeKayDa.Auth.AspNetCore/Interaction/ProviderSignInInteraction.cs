@@ -19,7 +19,7 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// A page that collects what the provider did not supply keeps it in the host's own store, then
 /// calls <see cref="SignInAsync"/>: the session is for the derived subject, never the upstream one.
 /// A page that links the external identity to a local account calls
-/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/>.
+/// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>.
 /// </para>
 /// <para>
 /// <strong>Terminal methods</strong> — every one but <see cref="GetPendingPrincipalAsync"/> — write
@@ -154,7 +154,7 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(context, taken);
 
-        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement);
+        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement, AuthenticatedAt: null);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
@@ -175,7 +175,11 @@ public sealed class ProviderSignInInteraction
     /// </param>
     /// <param name="loginIdentifier">
     /// What the local account signs in with, on the terms
-    /// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string)"/> states.
+    /// <see cref="SignInWithReplacedAccountAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, on the terms
+    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </param>
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
@@ -199,11 +203,12 @@ public sealed class ProviderSignInInteraction
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public Task SignInWithReplacedAccountAsync(string subject, string authenticationMethod, string? loginIdentifier = null)
+    public Task SignInWithReplacedAccountAsync(
+        string subject, string authenticationMethod, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(authenticationMethod);
 
-        return SignInWithReplacedAccountAsync(subject, [authenticationMethod], loginIdentifier);
+        return SignInWithReplacedAccountAsync(subject, [authenticationMethod], loginIdentifier, authenticatedAt);
     }
 
     /// <summary>
@@ -222,9 +227,14 @@ public sealed class ProviderSignInInteraction
     /// <param name="loginIdentifier">
     /// What the local account signs in with, such as its username: shown on the account picker, and
     /// matched against a client's <c>login_hint</c>, as for
-    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string)"/>. It wins over
+    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>. It wins over
     /// <see cref="ProviderSignInContext.LoginIdentifier"/>, which describes the external identity;
     /// <see langword="null"/> keeps that one, or the subject when the handler set none.
+    /// </param>
+    /// <param name="authenticatedAt">
+    /// When the user actually authenticated, on the terms <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/>
+    /// states. <see langword="null"/> means now, which suits a page that has just had the user
+    /// authenticate at the provider or confirm the local account.
     /// </param>
     /// <remarks>
     /// Terminal (see the class remarks). This is account linking: the page decided the external
@@ -260,19 +270,21 @@ public sealed class ProviderSignInInteraction
     /// <exception cref="InvalidOperationException">
     /// The request is not a <c>POST</c>, or there is no active HTTP request.
     /// </exception>
-    public async Task SignInWithReplacedAccountAsync(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null)
+    public async Task SignInWithReplacedAccountAsync(
+        string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
         var methods = SignInArguments.Methods(authenticationMethods);
         var replacement = SessionSubject.From(subject);
         var identifier = SignInArguments.LoginIdentifier(loginIdentifier);
 
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement, methods, identifier))
-            .ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(
+            context, Page, () => SignInAsReplacementAsync(context, replacement, methods, identifier, authenticatedAt)).ConfigureAwait(false);
     }
 #pragma warning restore RS0026
 
-    private async Task SignInAsReplacementAsync(HttpContext context, SessionSubject replacement, string[] methods, string? loginIdentifier)
+    private async Task SignInAsReplacementAsync(
+        HttpContext context, SessionSubject replacement, string[] methods, string? loginIdentifier, DateTimeOffset? authenticatedAt)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
@@ -281,7 +293,7 @@ public sealed class ProviderSignInInteraction
         RequireReplaceable(taken, replacement);
 
         var placement = taken.Placement with { LoginIdentifier = loginIdentifier ?? taken.Placement.LoginIdentifier };
-        var signIn = new SignIn(replacement, methods, taken.Provider, placement);
+        var signIn = new SignIn(replacement, methods, taken.Provider, placement, authenticatedAt);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
