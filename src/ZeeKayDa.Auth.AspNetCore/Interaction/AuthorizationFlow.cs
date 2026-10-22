@@ -68,8 +68,9 @@ internal sealed class AuthorizationFlow(
 
     /// <summary>
     /// Refuses a page's sign-in whose <paramref name="authenticatedAt"/> is not the fresh authentication
-    /// the request demands: earlier than the request itself under <c>prompt=login</c>, or older than its
-    /// <c>max_age</c> (OIDC Core §3.1.2.1). A sign-in that gives no time authenticated now.
+    /// the request demands: earlier than the request itself under <c>prompt=login</c>, or already older
+    /// than its <c>max_age</c> when the request was made, so that <c>max_age=0</c> is <c>prompt=login</c>
+    /// (OIDC Core §3.1.2.1). A sign-in that gives no time authenticated now.
     /// </summary>
     /// <exception cref="ZeeKayDaInteractionException">The sign-in is not fresh enough.</exception>
     public void ThrowIfNotFreshEnough(AuthorizationRequestContext requestContext, DateTimeOffset? authenticatedAt)
@@ -82,7 +83,7 @@ internal sealed class AuthorizationFlow(
         if (requestContext.Prompts.Contains(PromptValue.Login) && at < requestContext.IssuedAt)
             throw new ZeeKayDaInteractionException(NotFreshEnough);
 
-        if (requestContext.MaxAge is { } maxAge && IsOlderThan(at, maxAge))
+        if (requestContext.MaxAge is { } maxAge && requestContext.IssuedAt - at > maxAge)
             throw new ZeeKayDaInteractionException(NotFreshEnough);
     }
 
