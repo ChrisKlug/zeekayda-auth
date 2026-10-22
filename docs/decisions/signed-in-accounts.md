@@ -29,8 +29,10 @@ ASCII), refused at the call: a subject is compared exactly, so a stray space wou
 **Each account lives for the cookie lifetime from its own last sign-in; `auth_time` is a second clock.**
 A page may sign in from an earlier authentication, such as a cookie of the host's own, and pass when
 it happened as `authenticatedAt` (capped at now): that is `auth_time`, which `max_age` and the ID
-token read (OIDC Core §3.1.2.1), while the account's life runs from the sign-in. One shared clock was
-rejected: an old `authenticatedAt` would sign the user in already expired. A write for another
+token read (OIDC Core §3.1.2.1), while the account's life runs from the sign-in. A sign-in whose
+`authenticatedAt` is older than the request's own `max_age`, or under `prompt=login` earlier than the
+request, is refused at the page before anything is consumed. One shared clock was rejected: an old
+`authenticatedAt` would sign the user in already expired. A write for another
 account, a choice or a sign-out never lengthens any account's life: the ticket expires with the most
 recently signed-in account, and an account past its own lifetime is dropped on read.
 

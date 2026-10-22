@@ -63,7 +63,27 @@ internal sealed class AuthorizationFlow(
         if (prompts.Contains(PromptValue.Login))
             return true;
 
-        return maxAge is { } limit && (session is null || IsOlderThan(session, limit));
+        return maxAge is { } limit && (session is null || IsOlderThan(session.AuthTime, limit));
+    }
+
+    /// <summary>
+    /// Refuses a page's sign-in whose <paramref name="authenticatedAt"/> is not the fresh authentication
+    /// the request demands: earlier than the request itself under <c>prompt=login</c>, or older than its
+    /// <c>max_age</c> (OIDC Core §3.1.2.1). A sign-in that gives no time authenticated now.
+    /// </summary>
+    /// <exception cref="ZeeKayDaInteractionException">The sign-in is not fresh enough.</exception>
+    public void ThrowIfNotFreshEnough(AuthorizationRequestContext requestContext, DateTimeOffset? authenticatedAt)
+    {
+        ArgumentNullException.ThrowIfNull(requestContext);
+
+        if (authenticatedAt is not { } at)
+            return;
+
+        if (requestContext.Prompts.Contains(PromptValue.Login) && at < requestContext.IssuedAt)
+            throw new ZeeKayDaInteractionException(NotFreshEnough);
+
+        if (requestContext.MaxAge is { } maxAge && IsOlderThan(at, maxAge))
+            throw new ZeeKayDaInteractionException(NotFreshEnough);
     }
 
     /// <summary>
@@ -267,6 +287,11 @@ internal sealed class AuthorizationFlow(
         return now;
     }
 
+    private const string NotFreshEnough =
+        "The sign-in's authenticatedAt is older than the request's max_age, or, under prompt=login, earlier " +
+        "than the request: the client demanded a fresh authentication (LoginRequest.ReauthenticationRequired). " +
+        "Have the user authenticate on the page, and pass when they did, or null for now.";
+
     private const string AlreadyCompleted =
         "This authorization request has already been completed by another response — an authorization " +
         "code was issued, or the request was denied. The same request was answered twice; the first " +
@@ -279,8 +304,8 @@ internal sealed class AuthorizationFlow(
         timeProvider.GetUtcNow() >= requestContext.ExpiresAt;
 
     // max_age=0 falls out of the comparison.
-    private bool IsOlderThan(SsoSessionState session, TimeSpan maxAge) =>
-        timeProvider.GetUtcNow() - session.AuthTime > maxAge;
+    private bool IsOlderThan(DateTimeOffset authTime, TimeSpan maxAge) =>
+        timeProvider.GetUtcNow() - authTime > maxAge;
 
     private async ValueTask RefuseAsync(HttpContext context, AuthorizationRequestContext requestContext, string reason)
     {

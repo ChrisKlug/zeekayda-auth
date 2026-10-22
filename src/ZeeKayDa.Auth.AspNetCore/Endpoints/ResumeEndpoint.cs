@@ -116,7 +116,7 @@ internal sealed class ResumeEndpoint(
         }
 
         // No amr: the provider told the framework nothing about how the user proved who they are.
-        var promotion = new SignIn(promoted, AuthenticationMethods: [], registration.Name, signIn.Placement, AuthenticatedAt: null);
+        var promotion = new SignIn(promoted, new UserAuthentication(Methods: [], At: null), registration.Name, signIn.Placement);
         await SignInPromotedAsync(context, requestContext, promotion).ConfigureAwait(false);
         return Results.Empty;
     }

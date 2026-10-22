@@ -174,6 +174,10 @@ public sealed class LoginInteraction
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -251,6 +255,11 @@ public sealed class LoginInteraction
     /// <paramref name="authenticatedAt"/>.
     /// </para>
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is older than the request's <c>max_age</c>, or, under
+    /// <c>prompt=login</c>, earlier than the request: <see cref="LoginRequest.ReauthenticationRequired"/>
+    /// was <see langword="true"/> and the user did not authenticate again. Nothing was signed in.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -269,7 +278,7 @@ public sealed class LoginInteraction
     /// </exception>
     public Task SignInAsync(
         string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null) =>
-        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, authenticatedAt, addAccount: false));
+        CompleteAsync(SignInArguments.Page(subject, authenticationMethods, loginIdentifier, authenticatedAt));
 
     /// <summary>
     /// Signs the user in as <paramref name="subject"/>, authenticated by
@@ -289,6 +298,10 @@ public sealed class LoginInteraction
     /// <remarks>
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -346,6 +359,10 @@ public sealed class LoginInteraction
     /// </code>
     /// </example>
     /// </remarks>
+    /// <exception cref="ZeeKayDaInteractionException">
+    /// <paramref name="authenticatedAt"/> is not the fresh authentication the request demands, as
+    /// <see cref="SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
+    /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached. Fail-closed:
     /// nothing was signed in or issued.
@@ -362,13 +379,14 @@ public sealed class LoginInteraction
     /// </exception>
     public Task AddAccountAsync(
         string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null) =>
-        CompleteAsync(SignInArguments.Local(subject, authenticationMethods, loginIdentifier, authenticatedAt, addAccount: true));
+        CompleteAsync(SignInArguments.Page(subject, authenticationMethods, loginIdentifier, authenticatedAt).Adding());
 #pragma warning restore RS0026
 
     /// <summary>Signs in what the arguments, already checked, describe.</summary>
     private Task CompleteAsync(SignIn signIn) =>
         StepAsync(async (context, requestContext) =>
         {
+            _services.Flow.ThrowIfNotFreshEnough(requestContext, signIn.Authentication.At);
             await _services.Flow.ConsumePendingAsync(context, requestContext.Id).ConfigureAwait(false);
             await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
         });

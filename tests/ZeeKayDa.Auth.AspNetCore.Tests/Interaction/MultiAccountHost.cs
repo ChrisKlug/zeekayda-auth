@@ -283,13 +283,12 @@ internal sealed class MultiAccountBrowser(HttpClient client)
         string subject,
         bool add = true,
         string? loginIdentifier = null,
-        string clientId = MultiAccountHost.App,
-        DateTimeOffset? authenticatedAt = null)
+        string clientId = MultiAccountHost.App)
     {
         var authorize = await AuthorizeAsync(clientId, prompt: "login");
         authorize.StatusCode.Should().Be(HttpStatusCode.Redirect);
 
-        return await PostLoginAsync(Location(authorize), subject, add, loginIdentifier, authenticatedAt);
+        return await PostLoginAsync(Location(authorize), subject, add, loginIdentifier);
     }
 
     public Task<HttpResponseMessage> PostLoginAsync(
@@ -312,15 +311,26 @@ internal sealed class MultiAccountBrowser(HttpClient client)
         return await Client.PostAsync(url, form, Cancellation);
     }
 
+    /// <summary>
+    /// Signs <paramref name="subject"/> in the way a page does from a cookie of the host's own: through a
+    /// request that demands no fresh authentication, passing when the user authenticated. Returns the
+    /// login page's post response.
+    /// </summary>
+    public async Task<HttpResponseMessage> SignInFromHostCookieAsync(string subject, DateTimeOffset authenticatedAt, bool add = true)
+    {
+        var authorize = await AuthorizeAsync();
+        ShouldHaveGoneTo(authorize, MultiAccountHost.LoginPath);
+
+        return await PostLoginAsync(Location(authorize), subject, add, loginIdentifier: null, authenticatedAt);
+    }
+
     /// <summary>Signs in as <paramref name="subject"/> and redeems the code: an ID token to send as a hint.</summary>
     public async Task<string> IdTokenForAsync(
         string subject,
         bool add = true,
         string? loginIdentifier = null,
-        string clientId = MultiAccountHost.App,
-        DateTimeOffset? authenticatedAt = null) =>
-        await RedeemAsync(
-            (await SignInAsync(subject, add, loginIdentifier, clientId, authenticatedAt)).ShouldHaveIssuedCodeTo(MultiAccountHost.Redirect), clientId);
+        string clientId = MultiAccountHost.App) =>
+        await RedeemAsync((await SignInAsync(subject, add, loginIdentifier, clientId)).ShouldHaveIssuedCodeTo(MultiAccountHost.Redirect), clientId);
 
     /// <summary>Redeems the code the response issued, and returns the subject of the ID token.</summary>
     public async Task<string> SubjectAnsweredAsync(HttpResponseMessage response, string clientId = MultiAccountHost.App) =>

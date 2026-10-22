@@ -141,7 +141,8 @@ public sealed class LoginInteractionAccountsTests : IClassFixture<MultiAccountHo
     [Fact]
     public async Task A_sign_in_from_an_earlier_authentication_sends_a_later_max_age_request_to_authenticate_again()
     {
-        var alicesHint = await _browser.IdTokenForAsync(Alice, authenticatedAt: _host.Time.GetUtcNow().AddMinutes(-10));
+        var signedIn = await _browser.SignInFromHostCookieAsync(Alice, _host.Time.GetUtcNow().AddMinutes(-10));
+        var alicesHint = await _browser.RedeemAsync(signedIn.ShouldHaveIssuedCodeTo(Redirect));
         var login = await _browser.AuthorizeAsync(idTokenHint: alicesHint, maxAge: "300");
         ShouldHaveGoneTo(login, LoginPath);
 
@@ -153,7 +154,8 @@ public sealed class LoginInteractionAccountsTests : IClassFixture<MultiAccountHo
     [Fact]
     public async Task An_authentication_time_in_the_future_is_taken_as_now_so_it_cannot_satisfy_a_later_max_age()
     {
-        var alicesHint = await _browser.IdTokenForAsync(Alice, authenticatedAt: _host.Time.GetUtcNow().AddDays(1));
+        var signedIn = await _browser.SignInFromHostCookieAsync(Alice, _host.Time.GetUtcNow().AddDays(1));
+        var alicesHint = await _browser.RedeemAsync(signedIn.ShouldHaveIssuedCodeTo(Redirect));
         _host.Time.Advance(TimeSpan.FromMinutes(10));
 
         var login = await _browser.AuthorizeAsync(idTokenHint: alicesHint, maxAge: "300");
@@ -168,8 +170,45 @@ public sealed class LoginInteractionAccountsTests : IClassFixture<MultiAccountHo
     {
         var authenticatedAt = _host.Time.GetUtcNow().AddHours(-2);
 
-        var idToken = await _browser.IdTokenForAsync(Alice, add, authenticatedAt: authenticatedAt);
+        var signedIn = await _browser.SignInFromHostCookieAsync(Alice, authenticatedAt, add);
 
-        AuthTimeOf(idToken).Should().Be(authenticatedAt);
+        AuthTimeOf(await _browser.RedeemAsync(signedIn.ShouldHaveIssuedCodeTo(Redirect))).Should().Be(authenticatedAt);
+    }
+
+    [Fact]
+    public async Task Given_max_age_a_sign_in_authenticated_longer_ago_than_it_is_refused_and_issues_no_code()
+    {
+        var login = await _browser.AuthorizeAsync(maxAge: "300");
+        ShouldHaveGoneTo(login, LoginPath);
+
+        var signIn = async () => await _browser.PostLoginAsync(Location(login), Alice, authenticatedAt: _host.Time.GetUtcNow().AddMinutes(-10));
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*max_age*");
+        (await _browser.ReadSessionAsync()).Accounts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Given_max_age_a_sign_in_authenticated_within_it_issues_a_code()
+    {
+        var login = await _browser.AuthorizeAsync(maxAge: "300");
+        ShouldHaveGoneTo(login, LoginPath);
+
+        var signedIn = await _browser.PostLoginAsync(Location(login), Alice, authenticatedAt: _host.Time.GetUtcNow().AddMinutes(-4));
+
+        signedIn.ShouldHaveIssuedCodeTo(Redirect);
+    }
+
+    [Fact]
+    public async Task Given_prompt_login_a_sign_in_authenticated_before_the_request_is_refused()
+    {
+        var authenticatedAt = _host.Time.GetUtcNow();
+        _host.Time.Advance(TimeSpan.FromSeconds(30));
+        var login = await _browser.AuthorizeAsync(prompt: "login");
+        ShouldHaveGoneTo(login, LoginPath);
+
+        var signIn = async () => await _browser.PostLoginAsync(Location(login), Alice, authenticatedAt: authenticatedAt);
+
+        await signIn.Should().ThrowAsync<ZeeKayDaInteractionException>().WithMessage("*prompt=login*");
+        (await _browser.ReadSessionAsync()).Accounts.Should().BeEmpty();
     }
 }

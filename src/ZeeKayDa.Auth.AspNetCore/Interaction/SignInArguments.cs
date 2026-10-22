@@ -8,14 +8,17 @@ namespace ZeeKayDa.Auth.AspNetCore.Interaction;
 /// </summary>
 internal static class SignInArguments
 {
-    /// <summary>A local sign-in, its arguments checked and copied.</summary>
-    public static SignIn Local(
-        string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, DateTimeOffset? authenticatedAt, bool addAccount)
+    /// <summary>
+    /// A page's sign-in, its arguments checked and copied: a local one that replaces the accounts held,
+    /// until <see cref="SignIn.Adding"/> or a linking page's provider says otherwise.
+    /// </summary>
+    public static SignIn Page(string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier, DateTimeOffset? authenticatedAt)
     {
         var user = SessionSubject.From(subject);
         var methods = Methods(authenticationMethods);
 
-        return new SignIn(user, methods, ProviderScheme: null, new AccountPlacement(LoginIdentifier(loginIdentifier), addAccount), authenticatedAt);
+        return new SignIn(
+            user, new UserAuthentication(methods, authenticatedAt), ProviderScheme: null, new AccountPlacement(LoginIdentifier(loginIdentifier), AddAccount: false));
     }
 
     /// <summary>

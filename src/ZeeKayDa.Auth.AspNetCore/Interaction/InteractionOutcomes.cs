@@ -451,12 +451,20 @@ internal sealed class InteractionOutcomes(
 
 /// <summary>
 /// What a completed sign-in promotes; <c>ProviderScheme</c> is <see langword="null"/> for a local
-/// sign-in, <c>Placement</c> says whether it joins the accounts the browser holds, and
-/// <c>AuthenticatedAt</c> is when the user authenticated, <see langword="null"/> for now.
+/// sign-in, and <c>Placement</c> says whether it joins the accounts the browser holds.
 /// </summary>
 internal sealed record SignIn(
     SessionSubject Subject,
-    IReadOnlyList<string> AuthenticationMethods,
+    UserAuthentication Authentication,
     string? ProviderScheme,
-    AccountPlacement Placement,
-    DateTimeOffset? AuthenticatedAt);
+    AccountPlacement Placement)
+{
+    /// <summary>This sign-in, joining the accounts the browser holds rather than replacing them.</summary>
+    public SignIn Adding() => this with { Placement = Placement with { AddAccount = true } };
+}
+
+/// <summary>
+/// How the user proved who they are, reported to the client as <c>amr</c>, and when they did:
+/// <c>At</c> is <see langword="null"/> for now.
+/// </summary>
+internal sealed record UserAuthentication(IReadOnlyList<string> Methods, DateTimeOffset? At);

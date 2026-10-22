@@ -154,7 +154,7 @@ public sealed class ProviderSignInInteraction
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
         var promoted = Promote(context, taken);
 
-        var signIn = new SignIn(promoted, AuthenticationMethods: [], taken.Provider, taken.Placement, AuthenticatedAt: null);
+        var signIn = new SignIn(promoted, new UserAuthentication(Methods: [], At: null), taken.Provider, taken.Placement);
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 
@@ -185,8 +185,10 @@ public sealed class ProviderSignInInteraction
     /// Exactly the overload taking a list of methods, with one method in it.
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is
-    /// the upstream subject the provider returned.
+    /// The parked principal's provider is no longer registered, <paramref name="subject"/> is
+    /// the upstream subject the provider returned, or <paramref name="authenticatedAt"/> is not the
+    /// fresh authentication the request demands, as
+    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -250,8 +252,10 @@ public sealed class ProviderSignInInteraction
     /// </para>
     /// </remarks>
     /// <exception cref="ZeeKayDaInteractionException">
-    /// The parked principal's provider is no longer registered, or <paramref name="subject"/> is
-    /// the upstream subject the provider returned.
+    /// The parked principal's provider is no longer registered, <paramref name="subject"/> is
+    /// the upstream subject the provider returned, or <paramref name="authenticatedAt"/> is not the
+    /// fresh authentication the request demands, as
+    /// <see cref="LoginInteraction.SignInAsync(string, IEnumerable{string}, string, DateTimeOffset?)"/> states.
     /// </exception>
     /// <exception cref="ZeeKayDaStoreException">
     /// The interaction store or the authorization code store could not be reached before the
@@ -273,27 +277,29 @@ public sealed class ProviderSignInInteraction
     public async Task SignInWithReplacedAccountAsync(
         string subject, IEnumerable<string> authenticationMethods, string? loginIdentifier = null, DateTimeOffset? authenticatedAt = null)
     {
-        var methods = SignInArguments.Methods(authenticationMethods);
-        var replacement = SessionSubject.From(subject);
-        var identifier = SignInArguments.LoginIdentifier(loginIdentifier);
+        var replacement = SignInArguments.Page(subject, authenticationMethods, loginIdentifier, authenticatedAt);
 
         var context = RequireStateChangingRequest();
-        await _services.NothingToContinue.SignInStepAsync(
-            context, Page, () => SignInAsReplacementAsync(context, replacement, methods, identifier, authenticatedAt)).ConfigureAwait(false);
+        await _services.NothingToContinue.SignInStepAsync(context, Page, () => SignInAsReplacementAsync(context, replacement))
+            .ConfigureAwait(false);
     }
 #pragma warning restore RS0026
 
-    private async Task SignInAsReplacementAsync(
-        HttpContext context, SessionSubject replacement, string[] methods, string? loginIdentifier, DateTimeOffset? authenticatedAt)
+    /// <summary>Signs in <paramref name="replacement"/>, a page's sign-in, as the provider and placement the parked principal carries.</summary>
+    private async Task SignInAsReplacementAsync(HttpContext context, SignIn replacement)
     {
         var (requestContext, parked) = await ResolveParkedAsync(context).ConfigureAwait(false);
 
-        RequireReplaceable(parked, replacement);
+        RequireReplaceable(parked, replacement.Subject);
+        _services.Flow.ThrowIfNotFreshEnough(requestContext, replacement.Authentication.At);
         var taken = await TakeParkedAsync(context, requestContext).ConfigureAwait(false);
-        RequireReplaceable(taken, replacement);
+        RequireReplaceable(taken, replacement.Subject);
 
-        var placement = taken.Placement with { LoginIdentifier = loginIdentifier ?? taken.Placement.LoginIdentifier };
-        var signIn = new SignIn(replacement, methods, taken.Provider, placement, authenticatedAt);
+        var signIn = replacement with
+        {
+            ProviderScheme = taken.Provider,
+            Placement = taken.Placement with { LoginIdentifier = replacement.Placement.LoginIdentifier ?? taken.Placement.LoginIdentifier },
+        };
         await _services.Outcomes.CompleteSignInAsync(context, requestContext, signIn).ConfigureAwait(false);
     }
 

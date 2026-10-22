@@ -182,9 +182,9 @@ internal sealed class SsoSession(
         {
             SessionId = held?.SessionId ?? StoreKeyGenerator.Generate(),
             Subject = subject,
-            AuthTime = signIn.AuthenticatedAt < now ? signIn.AuthenticatedAt.Value : now,
+            AuthTime = signIn.Authentication.At < now ? signIn.Authentication.At.Value : now,
             SignedInAt = now,
-            Amr = [.. signIn.AuthenticationMethods],
+            Amr = [.. signIn.Authentication.Methods],
             LoginIdentifier = signIn.Placement.LoginIdentifier,
         };
 
@@ -303,8 +303,10 @@ internal sealed class SsoSession(
     {
         var sessionId = identity.FindFirst(SsoSessionClaimTypes.SessionId)?.Value;
         var subject = identity.FindFirst(SubjectClaimType)?.Value;
-        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(subject)
-            || ReadTime(identity, SsoSessionClaimTypes.AuthTime) is not { } authTime
+        if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(subject))
+            return null;
+
+        if (ReadTime(identity, SsoSessionClaimTypes.AuthTime) is not { } authTime
             || ReadTime(identity, SsoSessionClaimTypes.SignedInAt) is not { } signedInAt)
         {
             return null;

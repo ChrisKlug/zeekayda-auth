@@ -494,7 +494,7 @@ public sealed class EndSessionEndpointTests
             context.Request.Headers["Cookie"] = cookie;
 
         await scope.ServiceProvider.GetRequiredService<SsoSession>()
-            .PromoteAsync(context, new SignIn(SessionSubject.From(subject), [AuthenticationMethods.Password], ProviderScheme: null, new AccountPlacement(LoginIdentifier: null, AddAccount: false), AuthenticatedAt: null), "client-1");
+            .PromoteAsync(context, new SignIn(SessionSubject.From(subject), new UserAuthentication([AuthenticationMethods.Password], At: null), ProviderScheme: null, new AccountPlacement(LoginIdentifier: null, AddAccount: false)), "client-1");
 
         jar.Apply(context);
         return jar;

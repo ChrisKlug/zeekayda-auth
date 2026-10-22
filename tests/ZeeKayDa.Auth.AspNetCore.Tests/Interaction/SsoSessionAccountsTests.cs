@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -350,6 +351,18 @@ public sealed class SsoSessionAccountsTests : IDisposable
         (await browser.TicketExpiryAsync()).Should().Be(Start + browser.Lifetime);
     }
 
+    [Theory]
+    [InlineData(SsoSessionClaimTypes.AuthTime)]
+    [InlineData(SsoSessionClaimTypes.SignedInAt)]
+    public async Task An_account_missing_one_of_its_times_is_dropped_on_read(string missingClaimType)
+    {
+        var browser = NewBrowser();
+
+        await browser.WriteAccountWithoutAsync(Alice, missingClaimType);
+
+        (await browser.ReadAsync()).IsEmpty.Should().BeTrue();
+    }
+
     // ── Which account answers ─────────────────────────────────────────────────────────────────────
 
     private static SsoSessionState Account(string subject, string? loginIdentifier, DateTimeOffset signedInAt) => new()
@@ -486,7 +499,7 @@ public sealed class SsoSessionAccountsTests : IDisposable
             DateTimeOffset? authenticatedAt = null) =>
             UseAsync((context, session) => session.PromoteAsync(
                 context,
-                new SignIn(SessionSubject.From(subject), [], ProviderScheme: null, new AccountPlacement(loginIdentifier, addAccount), authenticatedAt),
+                new SignIn(SessionSubject.From(subject), new UserAuthentication([], authenticatedAt), ProviderScheme: null, new AccountPlacement(loginIdentifier, addAccount)),
                 clientId));
 
         public Task<SsoSessionList> ReadAsync() => UseAsync((context, session) => session.ReadAsync(context));
@@ -512,6 +525,27 @@ public sealed class SsoSessionAccountsTests : IDisposable
             {
                 var sessions = await session.ReadAsync(context);
                 await session.EndAsync(context, sessions, sessions.Find(subject)!);
+
+                return true;
+            });
+
+        /// <summary>
+        /// Writes the session cookie as the framework would for <paramref name="subject"/>, but without
+        /// the claim named <paramref name="omittedClaimType"/>.
+        /// </summary>
+        public Task WriteAccountWithoutAsync(string subject, string omittedClaimType) =>
+            UseAsync(async (context, _) =>
+            {
+                var now = Time.GetUtcNow().ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                Claim[] claims =
+                [
+                    new("sub", subject),
+                    new(SsoSessionClaimTypes.SessionId, "sid-" + subject),
+                    new(SsoSessionClaimTypes.AuthTime, now),
+                    new(SsoSessionClaimTypes.SignedInAt, now),
+                ];
+                var identity = new ClaimsIdentity(claims.Where(claim => claim.Type != omittedClaimType), ZeeKayDaCookies.Session);
+                await context.SignInAsync(ZeeKayDaCookies.Session, new ClaimsPrincipal(identity));
 
                 return true;
             });
