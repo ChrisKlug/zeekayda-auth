@@ -80,14 +80,13 @@ across both triggers belongs to the endpoints, each deciding its own shape when 
 
 **The grant store gets no bulk read and no cleanup method.** The coordinator never needs to read a
 whole family or subject, only to revoke them, so a bulk read would be an enumeration and leak surface
-for nothing; the capability is expressed purely as the revoke predicate. Expired-row cleanup is a
-maintenance concern — native per-item TTL where a backend has one — not coordinator protocol, and can
-be added compatibly if it is ever needed.
+for nothing; the capability is expressed purely as the revoke predicate. Expired-row cleanup is the
+backend's, never coordinator protocol (`token-stores.md`).
 
 **By-subject revocation is a capability, not a shipped feature.** The predicate exists on the grant
-store; no coordinator method and no endpoint calls it. Logout-all needs a session model, its own
-authentication and audit story, and RP-initiated-logout semantics. Do not read the column or the
-method as a delivered feature.
+store; no coordinator method and no endpoint calls it. It is never logout-all on its own: a user's
+live SSO session would hand them fresh tokens at the next silent renewal, so signing a user out
+everywhere ends their sessions first. Do not read the column or the method as a delivered feature.
 
 **Relational-first.** SQL gives the compare-and-set and both revocation predicates natively, and its
 only "remember to" is two indexes — whose absence is a pure performance regression, never a wrong

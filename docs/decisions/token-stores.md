@@ -77,18 +77,15 @@ reusing an id across codes extends a per-code correlation surface into a chain n
 
 **The framework stores are always registered; no backing store is, and absence fails startup.**
 `AddZeeKayDaAuth` registers both token-store coordinators. A startup validator fails the host when
-any of the three backing stores is unregistered, and every registration
-method throws `InvalidOperationException` on a second registration for the same interface rather
-than letting an earlier call silently win; a registration made straight on the service collection is
-not policed. In-memory registrations log at `Information` in `Development`; outside it
-they fail startup unless the call passed `allowOutsideDevelopment: true`, which downgrades the
-failure to a `Critical` warning on every startup. That flag is a parameter on the one registration
-method that needs it, never a bindable option — it is meaningless without the call it qualifies.
+any of the three backing stores is unregistered, and every registration method throws
+`InvalidOperationException` on a second registration for the same interface rather than letting an
+earlier call silently win; a registration made straight on the service collection is not policed.
+In-memory registrations log at `Information` in `Development`; outside it they fail startup unless
+the call passed `allowOutsideDevelopment: true`, which downgrades the failure to a `Critical`
+warning on every startup. The flag is a call parameter, never a bindable option: it qualifies a call.
 `AddInMemoryStores` covers all three stores; the distributed-cache interaction store is its own
-call, because its production story differs from the token stores' (below): a shared cache is a
-complete answer, while the per-process `MemoryDistributedCache` is logged at `Information` in
-`Development` and fails startup outside it unless the call opts out, which downgrades to a
-`Critical` warning on every start.
+call, because a shared cache is a complete production answer for it (below); a per-process
+`MemoryDistributedCache` behind it follows the in-memory rule through `allowMemoryCacheOutsideDevelopment`.
 
 **One terminal outcome per interaction is the code store's invariant, keyed `zkd:code:i:{hex(sha256(id))}`.**
 `AuthorizationCodeStore.TryClaimInteractionAsync` writes the claim — taken by issuance and by
@@ -111,9 +108,13 @@ adequate on a single persistent machine.
 
 **No token store that ships today is a production store; the distributed-cache interaction store
 is.** The in-memory token stores are development and test only. Production means a backend with a
-native atomic primitive, registered through the typed path. The interaction store is the asymmetry: it needs no atomic operation — the
-one race is decided by the code store — and eviction only fails a flow closed, so a shared cache is
-a complete answer for it and no Redis-specific interaction store is wanted.
+native atomic primitive, registered through the typed path. The interaction store is the asymmetry:
+it needs no atomic operation — the one race is decided by the code store — and eviction only fails a
+flow closed, so a shared cache is a complete answer for it and no Redis-specific store is wanted.
+
+**Pruning is the backend's, never the host's work.** The framework refuses a row past its expiry plus
+`ClockSkewTolerance`, and no cleanup may remove one sooner: native per-item expiry (Cosmos TTL), else
+a pruning hosted service a first-party store package registers with its stores, on by default.
 
 **The conformance kit is the last resort, not the sanctioned path.** `ZeeKayDa.Auth.TestKit` ships
 derive-and-run fixtures for both backing contracts, in its own package so a third party needs no
