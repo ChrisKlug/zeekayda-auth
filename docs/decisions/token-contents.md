@@ -53,8 +53,10 @@ resource owner, so a client-credentials token carries none.
 audiences, but nothing in the framework can name one: no `resource` parameter, no registration field,
 no flow that hands one ID token to two clients. `azp` is needed when the authorized party is not the
 sole audience; here it always is, so the claim would repeat `aud`. `sid` is defined by the logout
-specs and must match what a logout token later carries; it is emitted when that work defines the
-match, not before. Adding an audience, `azp` and `sid` together is additive.
+specs and must match what a logout token later carries, so it ships with logout propagation and not
+before, as the account's session identifier: the same at every client, since a `sid` need only be
+unique per issuer. It then leaves the server, so nothing ever acts on a bare `sid`, only on one
+inside a token the framework signed. Adding an audience, `azp` and `sid` is additive.
 
 **The access token always carries `iss`, `exp`, `aud`, `sub`, `client_id`, `iat`, `jti` and
 `scope`, under `typ` `at+jwt`.** RFC 9068 §2.2 requires the first seven, §2.2.3 asks for `scope` when
